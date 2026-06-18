@@ -1,0 +1,7 @@
+node_modules/
+dist/
+test-ledger/
+*.log
+.env
+.DS_Store
+target/
