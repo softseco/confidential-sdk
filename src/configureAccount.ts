@@ -11,6 +11,7 @@
 import {
   appendTransactionMessageInstructions,
   createTransactionMessage,
+  getBase64EncodedWireTransaction,
   getSignatureFromTransaction,
   pipe,
   sendAndConfirmTransactionFactory,
@@ -123,7 +124,7 @@ export async function configureAccount(
     verifyProofInstruction,
   ];
 
-  // 5. Build, sign, send and confirm.
+  // 5. Build, sign, simulate (to surface program logs on failure), send, confirm.
   const { value: latestBlockhash } = await input.rpc.getLatestBlockhash().send();
   const transactionMessage = pipe(
     createTransactionMessage({ version: 0 }),
@@ -132,10 +133,27 @@ export async function configureAccount(
     (tx) => appendTransactionMessageInstructions(instructions, tx),
   );
   const signedTransaction = await signTransactionMessageWithSigners(transactionMessage);
+
+  const simulation = await input.rpc
+    .simulateTransaction(getBase64EncodedWireTransaction(signedTransaction), {
+      encoding: "base64",
+      replaceRecentBlockhash: true,
+      sigVerify: false,
+    })
+    .send();
+  if (simulation.value.err) {
+    throw new Error(
+      "configureAccount transaction failed simulation: " +
+        JSON.stringify(simulation.value.err, (_k, v) => (typeof v === "bigint" ? v.toString() : v)) +
+        "\n--- program logs ---\n" +
+        (simulation.value.logs ?? []).join("\n"),
+    );
+  }
+
   await sendAndConfirmTransactionFactory({
     rpc: input.rpc,
     rpcSubscriptions: input.rpcSubscriptions,
-  })(signedTransaction, { commitment: "confirmed" });
+  })(signedTransaction, { commitment: "confirmed", skipPreflight: true });
 
   return {
     token,
