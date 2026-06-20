@@ -9,6 +9,8 @@ export { applyPendingBalance } from "./applyPendingBalance";
 export type { ApplyPendingBalanceInput, ApplyPendingBalanceResult } from "./applyPendingBalance";
 export { decryptBalance } from "./decryptBalance";
 export type { DecryptBalanceInput } from "./decryptBalance";
+export { transfer } from "./transfer";
+export type { TransferInput, TransferResult } from "./transfer";
 export {
   deriveAeKey,
   deriveAeKeyForOwnerMint,
