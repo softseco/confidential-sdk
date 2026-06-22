@@ -13,6 +13,7 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "tsx node_modules/mocha/bin/_mocha --require ./test/_patch-zk-sdk.cjs --timeout 120000 \"test/**/*.test.ts\"",
+    "example": "tsx --require ./test/_patch-zk-sdk.cjs examples/confidential-transfer.ts",
     "validator": "bash scripts/start-test-validator.sh",
     "clean": "rm -rf dist"
   },
