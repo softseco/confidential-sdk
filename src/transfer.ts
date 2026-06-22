@@ -31,9 +31,8 @@ import {
   fetchToken,
   findAssociatedTokenPda,
 } from "@solana-program/token-2022";
-import { getConfidentialTransferInstructionPlan } from "@solana-program/token-2022/confidential";
-
 import { deriveConfidentialKeypairs } from "./keys";
+import { getConfidentialTransferInstructionPlan } from "./internal/confidentialTransferProof";
 
 const bigintReplacer = (_key: string, value: unknown) =>
   typeof value === "bigint" ? value.toString() : value;
