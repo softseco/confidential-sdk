@@ -7,6 +7,7 @@
 // transfers (see configureAccount) and hold a public token balance.
 import {
   appendTransactionMessageInstructions,
+  assertIsTransactionWithBlockhashLifetime,
   createTransactionMessage,
   getBase64EncodedWireTransaction,
   getSignatureFromTransaction,
@@ -99,6 +100,7 @@ export async function deposit(input: DepositInput): Promise<DepositResult> {
     );
   }
 
+  assertIsTransactionWithBlockhashLifetime(signedTransaction);
   await sendAndConfirmTransactionFactory({
     rpc: input.rpc,
     rpcSubscriptions: input.rpcSubscriptions,

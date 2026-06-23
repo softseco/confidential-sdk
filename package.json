@@ -1,16 +1,27 @@
 {
   "name": "@softseco/confidential-transfers",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Open-source TypeScript SDK for Token-2022 Confidential Transfers on Solana.",
   "license": "Apache-2.0",
   "author": "Joachim Szamborski (Softseco)",
-  "repository": { "type": "git", "url": "https://github.com/softseco/confidential-sdk.git" },
+  "repository": { "type": "git", "url": "git+https://github.com/softseco/confidential-sdk.git" },
   "engines": { "node": ">=20" },
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "type": "commonjs",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
   "files": ["dist", "LICENSE", "NOTICE", "README.md"],
+  "publishConfig": { "access": "public" },
   "scripts": {
-    "build": "tsc",
+    "build": "tsup && tsc --emitDeclarationOnly",
+    "prepublishOnly": "npm run build",
     "typecheck": "tsc --noEmit",
     "test": "tsx node_modules/mocha/bin/_mocha --timeout 120000 \"test/**/*.test.ts\"",
     "example": "tsx examples/confidential-transfer.ts",
@@ -18,6 +29,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@noble/curves": "^1.9.7",
     "@solana-program/system": "^0.12.2",
     "@solana-program/token-2022": "^0.11.0",
     "@solana-program/zk-elgamal-proof": "^0.1.0",
@@ -31,6 +43,7 @@
     "@types/node": "^20.12.0",
     "chai": "^4.4.1",
     "mocha": "^10.4.0",
+    "tsup": "^8.5.0",
     "tsx": "^4.19.1",
     "typescript": "^5.4.5"
   }

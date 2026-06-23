@@ -5,6 +5,7 @@
 import {
   isSome,
   type Address,
+  type MessagePartialSigner,
   type Rpc,
   type SolanaRpcApi,
   type TransactionSigner,
@@ -21,7 +22,7 @@ import { deriveConfidentialKeypairs } from "./keys";
 export type DecryptBalanceInput = {
   rpc: Rpc<SolanaRpcApi>;
   /** Owner of the account, used to derive the viewing (AES) key. */
-  owner: TransactionSigner;
+  owner: TransactionSigner & MessagePartialSigner;
   mint: Address;
   token?: Address;
   programAddress?: Address;

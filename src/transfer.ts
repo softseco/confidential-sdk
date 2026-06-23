@@ -8,6 +8,7 @@
 // flow is produced as an InstructionPlan by the canonical SPL helper and executed
 // here as a sequence of transactions.
 import {
+  assertIsTransactionWithBlockhashLifetime,
   createTransactionMessage,
   createTransactionPlanExecutor,
   createTransactionPlanner,
@@ -19,6 +20,7 @@ import {
   setTransactionMessageLifetimeUsingBlockhash,
   signTransactionMessageWithSigners,
   type Address,
+  type MessagePartialSigner,
   type Rpc,
   type RpcSubscriptions,
   type Signature,
@@ -63,7 +65,7 @@ export type TransferInput = {
   rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
   payer: TransactionSigner;
   /** Source account owner — also the transfer authority and the key source. */
-  owner: TransactionSigner;
+  owner: TransactionSigner & MessagePartialSigner;
   mint: Address;
   /** Owner of the destination account; used to derive its ATA when no token is given. */
   destinationOwner?: Address;
@@ -171,6 +173,7 @@ export async function transfer(input: TransferInput): Promise<TransferResult> {
         );
       }
 
+      assertIsTransactionWithBlockhashLifetime(signed);
       await send(signed, { commitment: "confirmed", skipPreflight: true });
       const signature = getSignatureFromTransaction(signed);
       signatures.push(signature);

@@ -10,6 +10,7 @@
 // (see ./keys), so they are recoverable and never stored.
 import {
   appendTransactionMessageInstructions,
+  assertIsTransactionWithBlockhashLifetime,
   createTransactionMessage,
   getBase64EncodedWireTransaction,
   getSignatureFromTransaction,
@@ -19,6 +20,7 @@ import {
   setTransactionMessageLifetimeUsingBlockhash,
   signTransactionMessageWithSigners,
   type Address,
+  type MessagePartialSigner,
   type Rpc,
   type RpcSubscriptions,
   type Signature,
@@ -48,7 +50,7 @@ export type ConfigureAccountInput = {
   /** Pays transaction fees and account rent. */
   payer: TransactionSigner;
   /** The token-account owner. Signs key derivation and the configure instruction. */
-  owner: TransactionSigner;
+  owner: TransactionSigner & MessagePartialSigner;
   /** A mint already configured for confidential transfers. */
   mint: Address;
   maximumPendingBalanceCreditCounter?: number | bigint;
@@ -150,6 +152,7 @@ export async function configureAccount(
     );
   }
 
+  assertIsTransactionWithBlockhashLifetime(signedTransaction);
   await sendAndConfirmTransactionFactory({
     rpc: input.rpc,
     rpcSubscriptions: input.rpcSubscriptions,

@@ -7,6 +7,7 @@
 // decryptable balance. Keys are derived from the owner's wallet signer.
 import {
   appendTransactionMessageInstructions,
+  assertIsTransactionWithBlockhashLifetime,
   createTransactionMessage,
   getBase64EncodedWireTransaction,
   getSignatureFromTransaction,
@@ -17,6 +18,8 @@ import {
   setTransactionMessageLifetimeUsingBlockhash,
   signTransactionMessageWithSigners,
   type Address,
+  type MessagePartialSigner,
+  type ReadonlyUint8Array,
   type Rpc,
   type RpcSubscriptions,
   type Signature,
@@ -40,7 +43,7 @@ export type ApplyPendingBalanceInput = {
   rpc: Rpc<SolanaRpcApi>;
   rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
   payer: TransactionSigner;
-  owner: TransactionSigner;
+  owner: TransactionSigner & MessagePartialSigner;
   mint: Address;
   token?: Address;
   programAddress?: Address;
@@ -78,12 +81,12 @@ export async function applyPendingBalance(
     throw new Error("token account is missing the ConfidentialTransferAccount extension");
   }
 
-  const parseElGamal = (bytes: ReadonlyArray<number> | Uint8Array) => {
+  const parseElGamal = (bytes: ReadonlyUint8Array) => {
     const c = ElGamalCiphertext.fromBytes(new Uint8Array(bytes as Uint8Array));
     if (!c) throw new Error("failed to parse an ElGamal ciphertext");
     return c;
   };
-  const parseAe = (bytes: ReadonlyArray<number> | Uint8Array) => {
+  const parseAe = (bytes: ReadonlyUint8Array) => {
     const c = AeCiphertext.fromBytes(new Uint8Array(bytes as Uint8Array));
     if (!c) throw new Error("failed to parse an AES ciphertext");
     return c;
@@ -130,6 +133,7 @@ export async function applyPendingBalance(
     );
   }
 
+  assertIsTransactionWithBlockhashLifetime(signedTransaction);
   await sendAndConfirmTransactionFactory({
     rpc: input.rpc,
     rpcSubscriptions: input.rpcSubscriptions,
