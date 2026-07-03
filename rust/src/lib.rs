@@ -8,11 +8,15 @@
 //! `decrypt_balance`) and auditor-key selective-disclosure utilities are added
 //! incrementally.
 
+pub mod auditor;
 pub mod keys;
 pub mod operations;
 
+pub use auditor::{decrypt_auditor_amount, derive_auditor_keypair};
 pub use keys::derive_account_keys;
-pub use operations::configure_account;
+pub use operations::{
+    apply_pending_balance, configure_account, decrypt_balance, deposit, transfer,
+};
 
 /// The crate version, from `Cargo.toml`.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
