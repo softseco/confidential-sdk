@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "softseco-confidential-transfers"
+version = "0.2.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Rust helpers for SPL Token-2022 Confidential Transfers — a mirror of the @softseco/confidential-transfers TypeScript SDK."
+repository = "https://github.com/softseco/confidential-sdk"
+readme = "README.md"
+keywords = ["solana", "token-2022", "confidential", "elgamal"]
+categories = ["cryptography::cryptocurrencies"]
+
+# Versions are pinned with `=` to the exact set the official spl-token-cli uses,
+# because the Solana crate ecosystem is mid-migration (3.x -> 4.x) and newer
+# patch releases of `spl-token-client` / `solana-client` pull conflicting major
+# versions of `solana-transaction`. Pinning reproduces the CLI's working graph.
+[dependencies]
+solana-sdk = "=3.0.0"
+solana-client = { version = "=4.0.0-rc.0", features = ["agave-unstable-api"] }
+solana-zk-sdk = "=7.0.1"
+spl-token-2022 = { version = "=11.0.0", features = ["no-entrypoint"] }
+spl-token-client = "=0.19.0"
+spl-token-confidential-transfer-proof-generation = "=0.6.0"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
