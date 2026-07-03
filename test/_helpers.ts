@@ -71,6 +71,7 @@ export async function sendInstructions(
 export async function createConfidentialMint(
   payer: TransactionSigner,
   decimals = 2,
+  auditorElgamalPubkey?: Address,
 ): Promise<{ mint: Address; mintAuthority: KeyPairSigner; decimals: number }> {
   const [mint, mintAuthority] = await Promise.all([
     generateKeyPairSigner(),
@@ -79,7 +80,7 @@ export async function createConfidentialMint(
   const ctMintExtension = extension("ConfidentialTransferMint", {
     authority: some(mintAuthority.address),
     autoApproveNewAccounts: true,
-    auditorElgamalPubkey: none(),
+    auditorElgamalPubkey: auditorElgamalPubkey ? some(auditorElgamalPubkey) : none(),
   });
   const space = BigInt(getMintSize([ctMintExtension]));
   const rent = await rpc.getMinimumBalanceForRentExemption(space).send();
@@ -96,7 +97,7 @@ export async function createConfidentialMint(
       mint: mint.address,
       authority: some(mintAuthority.address),
       autoApproveNewAccounts: true,
-      auditorElgamalPubkey: none(),
+      auditorElgamalPubkey: auditorElgamalPubkey ? some(auditorElgamalPubkey) : none(),
     }),
     getInitializeMint2Instruction({
       mint: mint.address,

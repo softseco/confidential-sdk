@@ -12,6 +12,12 @@ export type { DecryptBalanceInput } from "./decryptBalance";
 export { transfer } from "./transfer";
 export type { TransferInput, TransferResult } from "./transfer";
 export {
+  decryptTransferAmountAsAuditor,
+  deriveAuditorElgamalKeypair,
+  getAuditorElgamalPubkey,
+} from "./auditor";
+export type { DecryptTransferAmountAsAuditorInput } from "./auditor";
+export {
   deriveAeKey,
   deriveAeKeyForOwnerMint,
   deriveConfidentialKeypairs,
