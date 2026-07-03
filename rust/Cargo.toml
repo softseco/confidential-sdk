@@ -12,12 +12,13 @@ categories = ["cryptography::cryptocurrencies"]
 
 # Versions are pinned with `=` to the exact set the official spl-token-cli uses,
 # because the Solana crate ecosystem is mid-migration (3.x -> 4.x) and newer
-# patch releases of `spl-token-client` / `solana-client` pull conflicting major
-# versions of `solana-transaction`. Pinning reproduces the CLI's working graph.
+# patch releases pull conflicting major versions. solana-zk-sdk is pinned to
+# 6.0.1 to match spl-token-client's own dependency, so the ElGamal/AES key types
+# line up across the crate boundary.
 [dependencies]
 solana-sdk = "=3.0.0"
 solana-client = { version = "=4.0.0-rc.0", features = ["agave-unstable-api"] }
-solana-zk-sdk = "=7.0.1"
+solana-zk-sdk = "=6.0.1"
 spl-token-2022 = { version = "=11.0.0", features = ["no-entrypoint"] }
 spl-token-client = "=0.19.0"
 spl-token-confidential-transfer-proof-generation = "=0.6.0"

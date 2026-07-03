@@ -3,10 +3,16 @@
 //! [`@softseco/confidential-transfers`](https://www.npmjs.com/package/@softseco/confidential-transfers)
 //! TypeScript SDK.
 //!
-//! Built on [`spl-token-client`] and [`solana-zk-sdk`]. The confidential-transfer
-//! helpers (`configure_account`, `deposit`, `transfer`, `apply_pending_balance`,
-//! `decrypt_balance`) and the auditor-key selective-disclosure utilities are added
-//! incrementally on top of this foundation.
+//! Built on [`spl-token-client`] and [`solana-zk-sdk`]. Confidential-transfer
+//! operations (`configure_account`, `deposit`, `transfer`, `apply_pending_balance`,
+//! `decrypt_balance`) and auditor-key selective-disclosure utilities are added
+//! incrementally.
+
+pub mod keys;
+pub mod operations;
+
+pub use keys::derive_account_keys;
+pub use operations::configure_account;
 
 /// The crate version, from `Cargo.toml`.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
