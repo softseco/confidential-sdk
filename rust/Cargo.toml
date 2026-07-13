@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 [package]
 name = "softseco-confidential-transfers"
-version = "0.2.0"
+version = "1.0.0"
 edition = "2021"
 license = "Apache-2.0"
 description = "Rust helpers for SPL Token-2022 Confidential Transfers — a mirror of the @softseco/confidential-transfers TypeScript SDK."
