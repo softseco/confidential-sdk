@@ -3,10 +3,11 @@
 //! [`@softseco/confidential-transfers`](https://www.npmjs.com/package/@softseco/confidential-transfers)
 //! TypeScript SDK.
 //!
-//! Built on [`spl-token-client`] and [`solana-zk-sdk`]. Confidential-transfer
-//! operations (`configure_account`, `deposit`, `transfer`, `apply_pending_balance`,
-//! `decrypt_balance`) and auditor-key selective-disclosure utilities are added
-//! incrementally.
+//! Built on [`spl-token-client`] and [`solana-zk-sdk`]. Provides the
+//! confidential-transfer operations (`configure_account`, `deposit`, `transfer`,
+//! `apply_pending_balance`, `decrypt_balance`) and auditor-key
+//! selective-disclosure utilities (`derive_auditor_keypair`,
+//! `decrypt_auditor_amount`).
 
 pub mod auditor;
 pub mod keys;
