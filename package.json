@@ -1,6 +1,6 @@
 {
   "name": "@softseco/confidential-transfers",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Open-source TypeScript SDK for Token-2022 Confidential Transfers on Solana.",
   "license": "Apache-2.0",
   "author": "Joachim Szamborski (Softseco)",
