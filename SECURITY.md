@@ -25,7 +25,7 @@ Instead, use one of:
 
 1. **GitHub private vulnerability reporting** (preferred) — on the repository, go to the
    **Security** tab → **Report a vulnerability**. This opens a private advisory with the maintainers.
-2. **Email** — contact the maintainer at **joachim.szamborski@gmail.com** with the details.
+2. **Email** — contact the maintainer at **hello@softseco.com** with the details.
 
 Please include, where possible:
 
