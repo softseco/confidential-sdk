@@ -142,9 +142,14 @@ pub async fn decrypt_balance(
 }
 
 /// Confidentially transfer tokens from the owner's available balance to another
-/// account. The three ZK proofs are generated and included inline; keys are
-/// derived from the owner's signer. Pass `auditor_elgamal_pubkey` for
-/// auditor-enabled mints.
+/// account. Keys are derived from the owner's signer; pass `auditor_elgamal_pubkey`
+/// for auditor-enabled mints.
+///
+/// **Experimental / unverified.** The three ZK proofs are generated **inline**, so
+/// the transfer transaction very likely exceeds Solana's transaction-size limit for
+/// real transfers — and this path has no integration test yet. The TypeScript SDK
+/// uses context-state proof accounts (verified and tested); a Rust port is planned.
+/// Do not rely on this in production until it is proven end-to-end.
 #[allow(clippy::too_many_arguments)]
 pub async fn transfer(
     rpc_url: &str,
