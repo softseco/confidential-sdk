@@ -14,6 +14,13 @@ which are released together.
 
 _Nothing yet._
 
+## [1.0.1] - 2026-07-14
+
+### Fixed
+- `transfer` now rejects amounts above the confidential-transfer maximum (`2^48 - 1`) with a clear
+  error, instead of producing an invalid range proof and a confusing on-chain failure. Found in a
+  self-audit; covered by a unit test.
+
 ## [1.0.0] - 2026-07-13
 
 First stable release. No functional changes to the API surface over `0.2.0`; this release commits
@@ -50,6 +57,7 @@ to that surface under semantic versioning.
 - Local-validator integration tests (gated behind `CT_LOCAL_PROGRAM=1`) and validator-free unit
   tests in CI. Published to npm.
 
+[1.0.1]: https://github.com/softseco/confidential-sdk/releases/tag/v1.0.1
 [1.0.0]: https://github.com/softseco/confidential-sdk/releases/tag/v1.0.0
 [0.2.0]: https://github.com/softseco/confidential-sdk/releases/tag/v0.2.0
 [0.1.0]: https://github.com/softseco/confidential-sdk/releases/tag/v0.1.0
