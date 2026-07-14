@@ -12,7 +12,8 @@ and [`solana-zk-sdk`](https://crates.io/crates/solana-zk-sdk).
 
 > **Status: `v1.0.0` — stable API.** The crate mirrors the TypeScript helpers
 > (`configure_account`, `deposit`, `transfer`, `apply_pending_balance`,
-> `decrypt_balance`) plus auditor-key selective disclosure. Confidential transfers
+> `decrypt_balance`) plus auditor-key selective disclosure. **`transfer` is currently
+> experimental — see the Note below.** Confidential transfers
 > depend on Solana's ZK ElGamal Proof Program; validated against a local validator
 > running that program plus a client-matching Token-2022 build.
 
@@ -67,9 +68,12 @@ never stored. `derive_account_keys` is exported for advanced use.
 | `decrypt_auditor_amount` | Recover a transfer amount from its auditor ciphertext |
 | `derive_account_keys` | Derive an account's `(ElGamalKeypair, AeKey)` |
 
-> **Note:** `transfer` generates the three ZK proofs inline. For very large
-> transfers that approach the transaction-size limit, a context-state proof
-> variant (as used by the TypeScript SDK) is planned.
+> **⚠️ `transfer` is experimental / unverified.** It generates the three ZK proofs
+> **inline**, so the transaction very likely exceeds Solana's size limit for real
+> transfers, and the path has **no integration test** yet. The TypeScript SDK uses
+> context-state proof accounts (verified and tested); a Rust port is planned. The
+> other helpers (`configure_account`, `deposit`, `apply_pending_balance`,
+> `decrypt_balance`, and the auditor utilities) are the tested mirror of the TS SDK.
 
 ## Build
 
