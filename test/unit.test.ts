@@ -193,4 +193,33 @@ describe("input guards", () => {
     expect(err).to.be.an("error");
     expect((err as Error).message).to.contain("Destination");
   });
+
+  it("transfer plan rejects an amount over the confidential-transfer maximum", async () => {
+    const owner = await generateKeyPairSigner();
+    const mint = (await generateKeyPairSigner()).address;
+    const { elgamalKeypair, aesKey } = await sdk.deriveConfidentialKeypairs({
+      signer: owner,
+      owner: owner.address,
+      mint,
+    });
+    let err: unknown;
+    try {
+      await getConfidentialTransferInstructionPlan({
+        payer: owner,
+        rpc: {} as never,
+        sourceToken: (await generateKeyPairSigner()).address,
+        mint,
+        destinationToken: (await generateKeyPairSigner()).address,
+        sourceTokenAccount: { extensions: some([{ __kind: "ConfidentialTransferAccount" }]) } as never,
+        authority: owner,
+        amount: 1n << 48n, // 2^48 — one over the maximum (2^48 - 1)
+        sourceElgamalKeypair: elgamalKeypair,
+        aesKey,
+      });
+    } catch (e) {
+      err = e;
+    }
+    expect(err).to.be.an("error");
+    expect((err as Error).message).to.contain("exceeds the confidential-transfer maximum");
+  });
 });
