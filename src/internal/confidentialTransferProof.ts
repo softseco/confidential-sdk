@@ -57,6 +57,10 @@ const TRANSFER_AMOUNT_HI_BIT_LENGTH = 32n;
 const REMAINING_BALANCE_BIT_LENGTH = 64;
 const RANGE_PROOF_PADDING_BIT_LENGTH = 16;
 
+/** Max confidential-transfer amount: lo (16 bits) + hi (32 bits) = 2^48 - 1. */
+const MAX_TRANSFER_AMOUNT =
+  (1n << (TRANSFER_AMOUNT_LO_BIT_LENGTH + TRANSFER_AMOUNT_HI_BIT_LENGTH)) - 1n;
+
 /** Minimal shape of the decoded ConfidentialTransferAccount extension we read. */
 type ConfidentialTransferAccountExtension = {
   __kind: "ConfidentialTransferAccount";
@@ -210,6 +214,11 @@ export async function getConfidentialTransferInstructionPlan(
   const sourceAccount = getRequiredConfidentialTransferAccountExtension(input.sourceTokenAccount);
   const amount = BigInt(input.amount);
   assertNonNegativeAmount(amount);
+  if (amount > MAX_TRANSFER_AMOUNT) {
+    throw new Error(
+      `amount ${amount} exceeds the confidential-transfer maximum of ${MAX_TRANSFER_AMOUNT} (2^48-1)`,
+    );
+  }
   const [transferAmountLo, transferAmountHi] = splitAmount(amount, TRANSFER_AMOUNT_LO_BIT_LENGTH);
 
   const sourcePubkey = input.sourceElgamalKeypair.pubkey();
