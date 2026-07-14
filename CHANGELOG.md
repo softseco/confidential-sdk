@@ -12,7 +12,11 @@ which are released together.
 
 ## [Unreleased]
 
-_Nothing yet._
+### Changed
+- Documented the Rust `transfer` as **experimental / unverified**: its ZK proofs are generated
+  inline, which likely exceeds the transaction-size limit for real transfers, and the path has no
+  integration test yet. A context-state port mirroring the TypeScript SDK is planned. (Docs only;
+  no code behavior change.)
 
 ## [1.0.1] - 2026-07-14
 
