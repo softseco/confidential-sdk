@@ -39,7 +39,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Only the fee payer needs SOL; owners sign but the payer covers fees + rent.
     let payer: Arc<dyn Signer> = Arc::new(Keypair::new());
     airdrop(&rpc, &payer.pubkey(), 2_000_000_000).await?;
-    eprintln!("[setup] payer balance = {}", rpc.get_balance(&payer.pubkey()).await?);
+    eprintln!(
+        "[setup] payer balance = {}",
+        rpc.get_balance(&payer.pubkey()).await?
+    );
 
     let mint = Keypair::new();
     let mint_authority = Keypair::new();
@@ -49,7 +52,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     // 1. Create a Token-2022 mint with the ConfidentialTransfer extension.
     eprintln!("[1] create mint");
     let token = Token::new(
-        Arc::new(ProgramRpcClient::new(rpc.clone(), ProgramRpcClientSendTransaction)),
+        Arc::new(ProgramRpcClient::new(
+            rpc.clone(),
+            ProgramRpcClientSendTransaction,
+        )),
         &spl_token_2022::id(),
         &mint.pubkey(),
         Some(DECIMALS),
@@ -78,10 +84,23 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let alice_ata = token.get_associated_token_address(&alice.pubkey());
     eprintln!("[3a] mint_to alice");
     token
-        .mint_to(&alice_ata, &mint_authority.pubkey(), 1000, &[&mint_authority])
+        .mint_to(
+            &alice_ata,
+            &mint_authority.pubkey(),
+            1000,
+            &[&mint_authority],
+        )
         .await?;
     eprintln!("[3b] deposit");
-    deposit(RPC_URL, payer.clone(), &alice, &mint.pubkey(), 1000, DECIMALS).await?;
+    deposit(
+        RPC_URL,
+        payer.clone(),
+        &alice,
+        &mint.pubkey(),
+        1000,
+        DECIMALS,
+    )
+    .await?;
     eprintln!("[3c] apply alice");
     apply_pending_balance(RPC_URL, payer.clone(), &alice, &mint.pubkey(), DECIMALS).await?;
 
@@ -102,7 +121,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     // 5. Bob rolls in his pending balance and decrypts it.
     eprintln!("[5] apply bob + decrypt");
     apply_pending_balance(RPC_URL, payer.clone(), &bob, &mint.pubkey(), DECIMALS).await?;
-    let bob_balance = decrypt_balance(RPC_URL, payer.clone(), &bob, &mint.pubkey(), DECIMALS).await?;
+    let bob_balance =
+        decrypt_balance(RPC_URL, payer.clone(), &bob, &mint.pubkey(), DECIMALS).await?;
     assert_eq!(bob_balance, 400, "Bob should have received 400");
 
     // 6. Alice keeps the remaining 600.
@@ -114,7 +134,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn airdrop(rpc: &RpcClient, pubkey: &Pubkey, lamports: u64) -> Result<(), Box<dyn std::error::Error>> {
+async fn airdrop(
+    rpc: &RpcClient,
+    pubkey: &Pubkey,
+    lamports: u64,
+) -> Result<(), Box<dyn std::error::Error>> {
     // Local faucets occasionally rate-limit back-to-back requests; retry a few times.
     let mut last_err: Option<Box<dyn std::error::Error>> = None;
     for _ in 0..8 {
@@ -129,7 +153,8 @@ async fn airdrop(rpc: &RpcClient, pubkey: &Pubkey, lamports: u64) -> Result<(), 
                 }
                 // Airdrop was accepted but never credited — a stalled validator.
                 // Fall through and retry rather than silently returning success.
-                last_err = Some("airdrop accepted but balance never credited (validator stalled?)".into());
+                last_err =
+                    Some("airdrop accepted but balance never credited (validator stalled?)".into());
             }
             Err(e) => {
                 last_err = Some(Box::new(e));
