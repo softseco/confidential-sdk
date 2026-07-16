@@ -13,7 +13,7 @@ private transfers without hand-assembling the primitives.
 
 A Rust crate mirroring the same helpers is published alongside it — see [Rust](#rust).
 
-> **Status: `v1.0.0` — stable API.** The public surface follows [semantic versioning](https://semver.org);
+> **Status: `v1.0.1` — stable API.** The public surface follows [semantic versioning](https://semver.org);
 > breaking changes will bump the major version. Confidential transfers depend on Solana's ZK ElGamal
 > Proof Program: this SDK is developed and validated against a **local validator** running that program
 > plus a client-matching Token-2022 build (see [Local development](#local-development)). Verify current
@@ -136,7 +136,9 @@ cargo add softseco-confidential-transfers
 ```
 
 Built on [`solana-zk-sdk`](https://crates.io/crates/solana-zk-sdk) and
-[`spl-token-client`](https://crates.io/crates/spl-token-client). See [`rust/README.md`](./rust/README.md)
+[`spl-token-client`](https://crates.io/crates/spl-token-client). Like the TypeScript SDK, the crate's
+`transfer` verifies its ZK proofs via context-state accounts and is validated end-to-end against a
+local validator (`rust/tests/ct_integration.rs`). See [`rust/README.md`](./rust/README.md)
 for the crate API and details.
 
 ## Local development
@@ -162,14 +164,14 @@ tests run — this is what CI does. See [CONTRIBUTING.md](./CONTRIBUTING.md) for
 
 ## Project status
 
-`v1.0.0` — the public API is stable. Both the TypeScript package and the Rust crate ship the five
-core operations plus auditor selective disclosure, each with CI. Changes are tracked in
+`v1.0.1` — the public API is stable. Both the TypeScript package and the Rust crate ship the five
+core operations plus auditor selective disclosure, each with CI, and `transfer` is validated
+end-to-end (TypeScript **and** Rust) against a local validator. Changes are tracked in
 [CHANGELOG.md](./CHANGELOG.md).
 
 Planned next:
 
 - Broaden cluster coverage as the ZK ElGamal Proof Program rolls out beyond local validators
-- A Rust integration-test suite against a local validator
 - Additional worked examples (end-to-end auditor flow, multi-party transfers)
 
 ## Security
