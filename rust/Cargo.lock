@@ -3162,7 +3162,7 @@ dependencies = [
 
 [[package]]
 name = "softseco-confidential-transfers"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "solana-client",
  "solana-sdk",

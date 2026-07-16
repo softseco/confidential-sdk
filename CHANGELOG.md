@@ -12,18 +12,19 @@ which are released together.
 
 ## [Unreleased]
 
-### Changed
-- Documented the Rust `transfer` as **experimental / unverified**: its ZK proofs are generated
-  inline, which likely exceeds the transaction-size limit for real transfers, and the path has no
-  integration test yet. A context-state port mirroring the TypeScript SDK is planned. (Docs only;
-  no code behavior change.)
+_Nothing yet._
 
 ## [1.0.1] - 2026-07-14
 
 ### Fixed
-- `transfer` now rejects amounts above the confidential-transfer maximum (`2^48 - 1`) with a clear
-  error, instead of producing an invalid range proof and a confusing on-chain failure. Found in a
+- **TypeScript** — `transfer` now rejects amounts above the confidential-transfer maximum
+  (`2^48 - 1`) with a clear error instead of producing an invalid range proof. Found in a
   self-audit; covered by a unit test.
+- **Rust** — `transfer` no longer builds an oversized transaction. Its three ZK proofs are now
+  verified into temporary **context-state accounts** (closed afterwards to reclaim rent), mirroring
+  the TypeScript SDK, so the transfer transaction fits Solana's 1232-byte limit. The previous inline
+  proofs produced a ~3308-byte transaction that always failed. Covered by a gated Rust integration
+  test (`rust/tests/ct_integration.rs`).
 
 ## [1.0.0] - 2026-07-13
 

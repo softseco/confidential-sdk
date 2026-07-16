@@ -10,12 +10,12 @@ Rust helpers for **SPL Token-2022 Confidential Transfers**, mirroring the
 TypeScript SDK. Built on [`spl-token-client`](https://crates.io/crates/spl-token-client)
 and [`solana-zk-sdk`](https://crates.io/crates/solana-zk-sdk).
 
-> **Status: `v1.0.0` — stable API.** The crate mirrors the TypeScript helpers
+> **Status: `v1.0.1` — stable API.** The crate mirrors the TypeScript helpers
 > (`configure_account`, `deposit`, `transfer`, `apply_pending_balance`,
-> `decrypt_balance`) plus auditor-key selective disclosure. **`transfer` is currently
-> experimental — see the Note below.** Confidential transfers
-> depend on Solana's ZK ElGamal Proof Program; validated against a local validator
-> running that program plus a client-matching Token-2022 build.
+> `decrypt_balance`) plus auditor-key selective disclosure. Confidential transfers
+> depend on Solana's ZK ElGamal Proof Program; validated end-to-end (including
+> `transfer`) against a local validator running that program plus a
+> client-matching Token-2022 build (`tests/ct_integration.rs`).
 
 ## Install
 
@@ -68,12 +68,12 @@ never stored. `derive_account_keys` is exported for advanced use.
 | `decrypt_auditor_amount` | Recover a transfer amount from its auditor ciphertext |
 | `derive_account_keys` | Derive an account's `(ElGamalKeypair, AeKey)` |
 
-> **⚠️ `transfer` is experimental / unverified.** It generates the three ZK proofs
-> **inline**, so the transaction very likely exceeds Solana's size limit for real
-> transfers, and the path has **no integration test** yet. The TypeScript SDK uses
-> context-state proof accounts (verified and tested); a Rust port is planned. The
-> other helpers (`configure_account`, `deposit`, `apply_pending_balance`,
-> `decrypt_balance`, and the auditor utilities) are the tested mirror of the TS SDK.
+> **Note on `transfer`:** the three required ZK proofs are too large to ship inline
+> (that would put the transaction at ~3.3 KB, over Solana's 1232-byte packet limit).
+> `transfer` therefore verifies each proof into a temporary **context-state account**
+> first, sends a small transfer transaction referencing those accounts, and closes
+> them afterwards to reclaim rent — the same flow as the TypeScript SDK and the
+> official `spl-token` CLI. Expect a handful of transactions per transfer.
 
 ## Build
 

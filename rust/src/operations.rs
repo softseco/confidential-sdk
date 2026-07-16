@@ -4,15 +4,21 @@
 use std::sync::Arc;
 
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{pubkey::Pubkey, signature::Signature, signer::Signer};
+use solana_sdk::{
+    pubkey::Pubkey,
+    signature::{Keypair, Signature},
+    signer::Signer,
+};
 use solana_zk_sdk::encryption::{auth_encryption::AeCiphertext, elgamal::ElGamalPubkey};
 use spl_token_2022::extension::{
     confidential_transfer::ConfidentialTransferAccount, BaseStateWithExtensions, ExtensionType,
 };
 use spl_token_client::{
     client::{ProgramRpcClient, ProgramRpcClientSendTransaction, RpcClientResponse},
-    token::Token,
+    token::{ComputeUnitLimit, ProofAccountWithCiphertext, Token},
+    zk_proofs::confidential_transfer::TransferAccountInfo,
 };
+use spl_token_confidential_transfer_proof_generation::transfer::TransferProofData;
 
 use crate::keys::derive_account_keys;
 
@@ -145,11 +151,12 @@ pub async fn decrypt_balance(
 /// account. Keys are derived from the owner's signer; pass `auditor_elgamal_pubkey`
 /// for auditor-enabled mints.
 ///
-/// **Experimental / unverified.** The three ZK proofs are generated **inline**, so
-/// the transfer transaction very likely exceeds Solana's transaction-size limit for
-/// real transfers — and this path has no integration test yet. The TypeScript SDK
-/// uses context-state proof accounts (verified and tested); a Rust port is planned.
-/// Do not rely on this in production until it is proven end-to-end.
+/// The three required ZK proofs (equality, ciphertext validity, range) are too large
+/// to ship inline — that made the transaction ~3308 bytes, over Solana's 1232-byte
+/// limit. Instead, each proof is verified into a temporary **context-state account**
+/// up front; the transfer instruction then only references those three accounts, and
+/// they are closed afterwards to reclaim rent (their lamports go back to the payer).
+/// Same flow as the TypeScript SDK and the official `spl-token` CLI.
 #[allow(clippy::too_many_arguments)]
 pub async fn transfer(
     rpc_url: &str,
@@ -161,7 +168,11 @@ pub async fn transfer(
     decimals: u8,
     auditor_elgamal_pubkey: Option<&ElGamalPubkey>,
 ) -> Result<Signature, Box<dyn std::error::Error>> {
-    let token = confidential_token(rpc_url, mint, decimals, payer);
+    let payer_pubkey = payer.pubkey();
+    // The range-proof verification consumes exactly the 200k-CU default budget;
+    // size compute budgets from simulation, as the official spl-token CLI does.
+    let token = confidential_token(rpc_url, mint, decimals, payer.clone())
+        .with_compute_unit_limit(ComputeUnitLimit::Simulated);
     let source_account = token.get_associated_token_address(&owner.pubkey());
     let destination_account = token.get_associated_token_address(destination_owner);
 
@@ -172,23 +183,106 @@ pub async fn transfer(
     let destination_ct = destination_info.get_extension::<ConfidentialTransferAccount>()?;
     let destination_elgamal_pubkey: ElGamalPubkey = destination_ct.elgamal_pubkey.try_into()?;
 
-    let response = token
+    // Snapshot the source state once and use it for both proof generation and the
+    // transfer instruction, so the proofs and the new balance cannot diverge.
+    let source_info = token.get_account_info(&source_account).await?;
+    let source_ct = source_info.get_extension::<ConfidentialTransferAccount>()?;
+    let transfer_account_info = TransferAccountInfo::new(source_ct);
+
+    let TransferProofData {
+        equality_proof_data,
+        ciphertext_validity_proof_data_with_ciphertext,
+        range_proof_data,
+    } = transfer_account_info.generate_split_transfer_proof_data(
+        amount,
+        &source_elgamal_keypair,
+        &source_aes_key,
+        &destination_elgamal_pubkey,
+        auditor_elgamal_pubkey,
+    )?;
+
+    // Verify each proof into its own throwaway context-state account. The range
+    // proof's verify instruction is itself near the transaction size limit, so its
+    // account creation and proof verification are split into two transactions.
+    let equality_keypair = Keypair::new();
+    let validity_keypair = Keypair::new();
+    let range_keypair = Keypair::new();
+    let equality_pubkey = equality_keypair.pubkey();
+    let validity_pubkey = validity_keypair.pubkey();
+    let range_pubkey = range_keypair.pubkey();
+    token
+        .confidential_transfer_create_context_state_account(
+            &range_pubkey,
+            &payer_pubkey,
+            &range_proof_data,
+            true, // split creation and verification across two transactions
+            &[&range_keypair],
+        )
+        .await?;
+    token
+        .confidential_transfer_create_context_state_account(
+            &equality_pubkey,
+            &payer_pubkey,
+            &equality_proof_data,
+            false,
+            &[&equality_keypair],
+        )
+        .await?;
+    token
+        .confidential_transfer_create_context_state_account(
+            &validity_pubkey,
+            &payer_pubkey,
+            &ciphertext_validity_proof_data_with_ciphertext.proof_data,
+            false,
+            &[&validity_keypair],
+        )
+        .await?;
+
+    let validity_proof_account = ProofAccountWithCiphertext {
+        context_state_account: validity_pubkey,
+        ciphertext_lo: ciphertext_validity_proof_data_with_ciphertext.ciphertext_lo,
+        ciphertext_hi: ciphertext_validity_proof_data_with_ciphertext.ciphertext_hi,
+    };
+
+    // The transfer itself now only references the three proof accounts, so the
+    // transaction stays well under the packet-size limit.
+    let transfer_result = token
         .confidential_transfer_transfer(
             &source_account,
             &destination_account,
             &owner.pubkey(),
-            None, // equality proof -> generated inline
-            None, // ciphertext-validity proof -> generated inline
-            None, // range proof -> generated inline
+            Some(&equality_pubkey),
+            Some(&validity_proof_account),
+            Some(&range_pubkey),
             amount,
-            None, // account_info -> fetch the source account state internally
+            Some(transfer_account_info),
             &source_elgamal_keypair,
             &source_aes_key,
             &destination_elgamal_pubkey,
             auditor_elgamal_pubkey,
             &[owner],
         )
-        .await?;
+        .await;
+
+    // Close the context-state accounts to reclaim rent — even when the transfer
+    // failed (best effort; a transfer error takes precedence below).
+    let mut close_error = None;
+    for context_account in [&equality_pubkey, &validity_pubkey, &range_pubkey] {
+        let close_result = token
+            .confidential_transfer_close_context_state_account(
+                context_account,
+                &payer_pubkey,
+                &payer_pubkey,
+                &[payer.as_ref()],
+            )
+            .await;
+        close_error = close_error.or(close_result.err());
+    }
+
+    let response = transfer_result?;
+    if let Some(error) = close_error {
+        return Err(error.into());
+    }
     match response {
         RpcClientResponse::Signature(signature) => Ok(signature),
         _ => Err("transfer: expected a transaction signature".into()),
