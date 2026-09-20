@@ -13,8 +13,10 @@ private transfers without hand-assembling the primitives.
 
 A Rust crate mirroring the same helpers is published alongside it — see [Rust](#rust).
 
-> **Status: `v1.0.1` — stable API.** The public surface follows [semantic versioning](https://semver.org);
-> breaking changes will bump the major version. Confidential transfers depend on Solana's ZK ElGamal
+> **Status: `v2.0.0` — stable API.** The public surface follows [semantic versioning](https://semver.org);
+> breaking changes will bump the major version. **2.0.0 changes key derivation** to the Solana
+> ecosystem standard, so keys derived by 1.x are different — see
+> [CHANGELOG.md](./CHANGELOG.md) for the migration. Confidential transfers depend on Solana's ZK ElGamal
 > Proof Program: this SDK is developed and validated against a **local validator** running that program
 > plus a client-matching Token-2022 build (see [Local development](#local-development)). Verify current
 > support on your target cluster before deploying beyond a local validator. Runtime: **Node ≥ 20**.
@@ -28,9 +30,12 @@ A Rust crate mirroring the same helpers is published alongside it — see [Rust]
 - **`transfer`** — privately transfer an encrypted amount (equality + ciphertext-validity + range proofs, verified via context-state accounts)
 - **Auditor selective disclosure** — derive an auditor ElGamal identity and recover transfer amounts on an auditor-enabled mint, without the power to spend
 
-Keys are derived deterministically from the account owner's wallet signer and bound to
-`(owner, mint)`, so they are recoverable from the wallet alone and never need to be stored. The
-derivation matches the reference Rust `solana-zk-sdk` vector.
+Keys are derived deterministically from the account owner's wallet signer using the standard
+confidential-balances derivation: one signature over the constant message `solana-conf-bal/v1`,
+expanded through HKDF-SHA512 into the ElGamal and AES keys. They are bound to the wallet alone —
+one keypair across every mint and token account — so they are recoverable from the wallet, never
+need to be stored, and match what the Rust `solana-zk-sdk`, the Token-2022 clients and every other
+standard client derive for the same wallet.
 
 ## Install
 
@@ -122,9 +127,16 @@ const amount = await decryptTransferAmountAsAuditor({ rpc, signature, auditorKey
 | `deriveAuditorElgamalKeypair` | Derive the auditor's ElGamal keypair from its wallet | `signer` → `ElGamalKeypair` |
 | `getAuditorElgamalPubkey` | Auditor pubkey for a mint's CT config | `auditorKeypair` → `Address` |
 | `decryptTransferAmountAsAuditor` | Recover a transfer's amount as the auditor | `rpc`, `signature`, `auditorKeypair` → `bigint` |
+| `deriveConfidentialKeys` | The wallet's standard ElGamal + AES keys, from one signature | `signer` → `{ elgamalKeypair, aesKey }` |
+| `deriveConfidentialKeysWithSeed` | Seed-scoped, non-standard derivation | `signer`, `publicSeed` → `{ elgamalKeypair, aesKey }` |
+| `pdaWalletPublicSeed` | Canonical seed for single-signer PDA wallets | `programId`, `walletPda`, `mint`, `tokenAccount` → `Uint8Array` |
 
 Every function accepts an optional `programAddress` (defaults to Token-2022) and derives the
 owner's ElGamal/AES keys from the `owner` signer — no key storage required.
+
+> **Upgrading from 1.x.** Key derivation changed to the ecosystem standard, so 1.x keys and 2.x
+> keys differ. An account configured by 1.x must have its balance applied and withdrawn with 1.x
+> before being re-configured with 2.x.
 
 ## Rust
 
@@ -164,10 +176,12 @@ tests run — this is what CI does. See [CONTRIBUTING.md](./CONTRIBUTING.md) for
 
 ## Project status
 
-`v1.0.1` — the public API is stable. Both the TypeScript package and the Rust crate ship the five
+`v2.0.0` — the public API is stable. Both the TypeScript package and the Rust crate ship the five
 core operations plus auditor selective disclosure, each with CI, and `transfer` is validated
-end-to-end (TypeScript **and** Rust) against a local validator. Changes are tracked in
-[CHANGELOG.md](./CHANGELOG.md).
+end-to-end (TypeScript **and** Rust) against a local validator. Since 2.0.0 both halves derive keys
+through the ecosystem-standard `solana-conf-bal/v1` derivation, pinned by the same test vector in
+each language, so they are byte-identical to each other and to the Token-2022 clients. Changes are
+tracked in [CHANGELOG.md](./CHANGELOG.md).
 
 Planned next:
 

@@ -1,6 +1,6 @@
 {
   "name": "@softseco/confidential-transfers",
-  "version": "1.0.1",
+  "version": "2.0.0",
   "description": "Open-source TypeScript SDK for Token-2022 Confidential Transfers on Solana.",
   "license": "Apache-2.0",
   "author": "Joachim Szamborski (Softseco)",
@@ -36,7 +36,7 @@
     "@solana-program/zk-elgamal-proof": "^0.1.0",
     "@solana/kit": "^6.10.0",
     "@solana/sysvars": "^5.0.0",
-    "@solana/zk-sdk": "^0.4.2"
+    "@solana/zk-sdk": "^0.5.3"
   },
   "devDependencies": {
     "@types/chai": "^4.3.14",

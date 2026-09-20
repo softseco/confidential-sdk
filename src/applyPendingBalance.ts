@@ -35,7 +35,7 @@ import {
 } from "@solana-program/token-2022";
 import { AeCiphertext, ElGamalCiphertext } from "@solana/zk-sdk/node";
 
-import { deriveConfidentialKeypairs } from "./keys";
+import { deriveConfidentialKeys } from "./keys";
 
 const PENDING_BALANCE_LO_BIT_LENGTH = 16n;
 
@@ -65,11 +65,7 @@ export async function applyPendingBalance(
       })
     )[0];
 
-  const { elgamalKeypair, aesKey } = await deriveConfidentialKeypairs({
-    signer: input.owner,
-    owner: input.owner.address,
-    mint: input.mint,
-  });
+  const { elgamalKeypair, aesKey } = await deriveConfidentialKeys({ signer: input.owner });
   const elgamalSecretKey = elgamalKeypair.secret();
 
   const { data } = await fetchToken(input.rpc, token);

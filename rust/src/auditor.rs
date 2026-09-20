@@ -7,14 +7,18 @@
 //! being able to spend, and without affecting anyone else's confidentiality.
 //! Mirrors the TypeScript SDK's auditor utilities.
 use solana_sdk::signer::Signer;
-use solana_zk_sdk::encryption::elgamal::{ElGamalCiphertext, ElGamalKeypair};
+use solana_zk_sdk::encryption::{
+    derivation::derive_confidential_keys,
+    elgamal::{ElGamalCiphertext, ElGamalKeypair},
+};
 
-/// Derive the auditor's ElGamal keypair from its wallet signer. The key is
+/// Derive the auditor's ElGamal keypair from its wallet signer: the ElGamal half
+/// of the wallet's standard confidential-balances keys. The key is
 /// mint-independent, so it is recoverable from the wallet alone and never stored.
 pub fn derive_auditor_keypair(
     signer: &dyn Signer,
 ) -> Result<ElGamalKeypair, Box<dyn std::error::Error>> {
-    ElGamalKeypair::new_from_signer(signer, &[])
+    Ok(derive_confidential_keys(signer, b"")?.0)
 }
 
 /// Recover a confidential transfer's amount from its auditor ciphertext (the

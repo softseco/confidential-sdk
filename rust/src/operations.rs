@@ -58,7 +58,7 @@ pub async fn configure_account(
         )
         .await?;
 
-    let (elgamal_keypair, aes_key) = derive_account_keys(owner, &account)?;
+    let (elgamal_keypair, aes_key) = derive_account_keys(owner)?;
 
     let response = token
         .confidential_transfer_configure_token_account(
@@ -109,7 +109,7 @@ pub async fn apply_pending_balance(
 ) -> Result<Signature, Box<dyn std::error::Error>> {
     let token = confidential_token(rpc_url, mint, decimals, payer);
     let account = token.get_associated_token_address(&owner.pubkey());
-    let (elgamal_keypair, aes_key) = derive_account_keys(owner, &account)?;
+    let (elgamal_keypair, aes_key) = derive_account_keys(owner)?;
     let response = token
         .confidential_transfer_apply_pending_balance(
             &account,
@@ -137,7 +137,7 @@ pub async fn decrypt_balance(
 ) -> Result<u64, Box<dyn std::error::Error>> {
     let token = confidential_token(rpc_url, mint, decimals, payer);
     let account = token.get_associated_token_address(&owner.pubkey());
-    let (_elgamal_keypair, aes_key) = derive_account_keys(owner, &account)?;
+    let (_elgamal_keypair, aes_key) = derive_account_keys(owner)?;
 
     let account_info = token.get_account_info(&account).await?;
     let ct_account = account_info.get_extension::<ConfidentialTransferAccount>()?;
@@ -176,7 +176,7 @@ pub async fn transfer(
     let source_account = token.get_associated_token_address(&owner.pubkey());
     let destination_account = token.get_associated_token_address(destination_owner);
 
-    let (source_elgamal_keypair, source_aes_key) = derive_account_keys(owner, &source_account)?;
+    let (source_elgamal_keypair, source_aes_key) = derive_account_keys(owner)?;
 
     // Read the destination's ElGamal public key from its confidential account.
     let destination_info = token.get_account_info(&destination_account).await?;

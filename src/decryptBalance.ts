@@ -17,7 +17,7 @@ import {
 } from "@solana-program/token-2022";
 import { AeCiphertext } from "@solana/zk-sdk/node";
 
-import { deriveConfidentialKeypairs } from "./keys";
+import { deriveConfidentialKeys } from "./keys";
 
 export type DecryptBalanceInput = {
   rpc: Rpc<SolanaRpcApi>;
@@ -41,11 +41,7 @@ export async function decryptBalance(input: DecryptBalanceInput): Promise<bigint
       })
     )[0];
 
-  const { aesKey } = await deriveConfidentialKeypairs({
-    signer: input.owner,
-    owner: input.owner.address,
-    mint: input.mint,
-  });
+  const { aesKey } = await deriveConfidentialKeys({ signer: input.owner });
 
   const { data } = await fetchToken(input.rpc, token);
   if (!isSome(data.extensions)) {

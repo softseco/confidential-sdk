@@ -9,7 +9,6 @@
 // the confidentiality of balances for anyone else. This is the "selective
 // disclosure" pattern: privacy by default, auditability by designation.
 import {
-  createSignableMessage,
   getAddressDecoder,
   getBase58Encoder,
   type Address,
@@ -23,6 +22,8 @@ import {
   getConfidentialTransferInstructionDataDecoder,
 } from "@solana-program/token-2022";
 import { ElGamalCiphertext, ElGamalKeypair } from "@solana/zk-sdk/node";
+
+import { deriveConfidentialKeys } from "./keys";
 
 const TRANSFER_AMOUNT_LO_BIT_LENGTH = 16n;
 
@@ -39,13 +40,8 @@ const CONFIDENTIAL_TRANSFER_INNER_DISCRIMINATOR = 7;
 export async function deriveAuditorElgamalKeypair(
   signer: MessagePartialSigner,
 ): Promise<ElGamalKeypair> {
-  const message = ElGamalKeypair.signerMessage(new Uint8Array(0));
-  const [signatures] = await signer.signMessages([createSignableMessage(message)]);
-  const signature = signatures?.[signer.address];
-  if (signature == null) {
-    throw new Error(`Signer ${signer.address} did not return a signature`);
-  }
-  return ElGamalKeypair.fromSignature(new Uint8Array(signature));
+  const { elgamalKeypair } = await deriveConfidentialKeys({ signer });
+  return elgamalKeypair;
 }
 
 /** The auditor's ElGamal public key as an Address, for a mint's confidential-transfer config. */

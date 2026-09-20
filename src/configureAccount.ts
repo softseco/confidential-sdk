@@ -39,7 +39,7 @@ import {
 import { verifyPubkeyValidity } from "@solana-program/zk-elgamal-proof";
 import { PubkeyValidityProofData } from "@solana/zk-sdk/node";
 
-import { deriveConfidentialKeypairs, type ConfidentialKeypairs } from "./keys";
+import { deriveConfidentialKeys, type ConfidentialKeypairs } from "./keys";
 
 /** Default cap on un-applied incoming confidential credits (2^16). */
 const DEFAULT_MAXIMUM_PENDING_BALANCE_CREDIT_COUNTER = 1n << 16n;
@@ -70,11 +70,7 @@ export async function configureAccount(
   const programAddress = input.programAddress ?? TOKEN_2022_PROGRAM_ADDRESS;
 
   // 1. Derive the account's encryption keys deterministically from the owner.
-  const { elgamalKeypair, aesKey } = await deriveConfidentialKeypairs({
-    signer: input.owner,
-    owner: input.owner.address,
-    mint: input.mint,
-  });
+  const { elgamalKeypair, aesKey } = await deriveConfidentialKeys({ signer: input.owner });
 
   // 2. Resolve the owner's associated token account.
   const [token] = await findAssociatedTokenPda({

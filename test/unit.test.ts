@@ -15,9 +15,8 @@ import {
 import { getConfidentialTransferInstructionPlan } from "../src/internal/confidentialTransferProof";
 import {
   deriveAeKey,
-  deriveAeKeyForOwnerMint,
+  deriveConfidentialKeysWithSeed,
   deriveElGamalKeypair,
-  deriveElGamalKeypairForOwnerMint,
 } from "../src/keys";
 import { transfer } from "../src/transfer";
 
@@ -29,11 +28,12 @@ describe("public API", () => {
       "applyPendingBalance",
       "decryptBalance",
       "transfer",
-      "deriveConfidentialKeypairs",
+      "deriveConfidentialKeys",
+      "deriveConfidentialKeysWithSeed",
       "deriveElGamalKeypair",
       "deriveAeKey",
-      "deriveElGamalKeypairForOwnerMint",
-      "deriveAeKeyForOwnerMint",
+      "getElGamalPubkeyAddress",
+      "pdaWalletPublicSeed",
     ];
     for (const name of names) {
       expect(sdk, `missing export: ${name}`)
@@ -86,14 +86,17 @@ describe("key derivation (variants)", () => {
     expect(await deriveAeKey({ signer })).to.have.length(16);
   });
 
-  it("binds the (owner, mint) variants to the mint", async () => {
+  it("scopes the seeded variant away from the standard keys", async () => {
     const signer = await generateKeyPairSigner();
-    const mintA = (await generateKeyPairSigner()).address;
-    const mintB = (await generateKeyPairSigner()).address;
-    const a = await deriveElGamalKeypairForOwnerMint({ signer, owner: signer.address, mint: mintA });
-    const b = await deriveElGamalKeypairForOwnerMint({ signer, owner: signer.address, mint: mintB });
-    expect(Array.from(a.secretKey)).to.not.deep.equal(Array.from(b.secretKey));
-    expect(await deriveAeKeyForOwnerMint({ signer, owner: signer.address, mint: mintA })).to.have.length(16);
+    const standard = await deriveElGamalKeypair({ signer });
+    const seeded = await deriveConfidentialKeysWithSeed({
+      signer,
+      publicSeed: new Uint8Array([9, 9, 9, 9]),
+    });
+    expect(Array.from(new Uint8Array(seeded.elgamalKeypair.secret().toBytes()))).to.not.deep.equal(
+      Array.from(standard.secretKey),
+    );
+    expect(new Uint8Array(seeded.aesKey.toBytes())).to.have.length(16);
   });
 
   it("throws when the signer returns no signature", async () => {
@@ -137,11 +140,7 @@ describe("input guards", () => {
   it("transfer plan rejects a source account without the CT extension", async () => {
     const owner = await generateKeyPairSigner();
     const mint = (await generateKeyPairSigner()).address;
-    const { elgamalKeypair, aesKey } = await sdk.deriveConfidentialKeypairs({
-      signer: owner,
-      owner: owner.address,
-      mint,
-    });
+    const { elgamalKeypair, aesKey } = await sdk.deriveConfidentialKeys({ signer: owner });
     let err: unknown;
     try {
       await getConfidentialTransferInstructionPlan({
@@ -167,11 +166,7 @@ describe("input guards", () => {
   it("transfer plan requires a destination", async () => {
     const owner = await generateKeyPairSigner();
     const mint = (await generateKeyPairSigner()).address;
-    const { elgamalKeypair, aesKey } = await sdk.deriveConfidentialKeypairs({
-      signer: owner,
-      owner: owner.address,
-      mint,
-    });
+    const { elgamalKeypair, aesKey } = await sdk.deriveConfidentialKeys({ signer: owner });
     let err: unknown;
     try {
       await getConfidentialTransferInstructionPlan({
@@ -197,11 +192,7 @@ describe("input guards", () => {
   it("transfer plan rejects an amount over the confidential-transfer maximum", async () => {
     const owner = await generateKeyPairSigner();
     const mint = (await generateKeyPairSigner()).address;
-    const { elgamalKeypair, aesKey } = await sdk.deriveConfidentialKeypairs({
-      signer: owner,
-      owner: owner.address,
-      mint,
-    });
+    const { elgamalKeypair, aesKey } = await sdk.deriveConfidentialKeys({ signer: owner });
     let err: unknown;
     try {
       await getConfidentialTransferInstructionPlan({

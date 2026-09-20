@@ -1,22 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Confidential-transfer key derivation.
+// Confidential-balances key derivation.
 //
-// The ElGamal (balance/amount encryption) and AES (decryptable-balance) keys
-// are derived deterministically from the account owner's wallet signer and
-// bound to the (owner, mint) pair. They are therefore recoverable from the
-// wallet alone and never need to be stored. This mirrors the reference
-// derivation in solana-program/token-2022 and its Rust solana-zk-sdk vector.
+// The ElGamal key (balance and amount encryption) and the AES key (the
+// `decryptable_available_balance` fast path) are derived from a single ed25519
+// signature over the constant message `solana-conf-bal/v1`, expanded through a
+// shared HKDF-SHA512 chain. The derivation is bound to the signing wallet
+// alone: one ElGamal keypair and one AES key across every mint and token
+// account the wallet owns, byte-identical to what the Rust `solana-zk-sdk`,
+// the Token-2022 clients and every other standard client derive for the same
+// wallet. Keys are therefore recoverable from the wallet and never stored.
+//
+// Before 2.0.0 this SDK scoped keys by (owner, mint) while its Rust twin
+// scoped them by token account. Both schemes are superseded, and because they
+// disagreed, an account configured with one could not be read with the other.
+// Accounts configured by 1.x must be re-configured; see CHANGELOG.md.
 import {
   createSignableMessage,
   getAddressDecoder,
   getAddressEncoder,
-  getTupleEncoder,
   type Address,
   type MessagePartialSigner,
   type ReadonlyUint8Array,
 } from "@solana/kit";
-import { AeKey, ElGamalKeypair } from "@solana/zk-sdk/node";
+import { AeKey, ConfidentialKeys, ElGamalKeypair } from "@solana/zk-sdk/node";
 
 /** Public ElGamal key (as an Address) plus the 32-byte ElGamal secret key. */
 export type DerivedElGamalKeypair = Readonly<{
@@ -30,10 +37,6 @@ export type ConfidentialKeypairs = Readonly<{
   aesKey: AeKey;
 }>;
 
-function ownerMintSeed(owner: Address, mint: Address): ReadonlyUint8Array {
-  return getTupleEncoder([getAddressEncoder(), getAddressEncoder()]).encode([owner, mint]);
-}
-
 async function signDerivationMessage(
   signer: MessagePartialSigner,
   message: Uint8Array,
@@ -46,71 +49,93 @@ async function signDerivationMessage(
   return new Uint8Array(signature);
 }
 
-/** Derive an ElGamal keypair from a signer (optionally domain-separated by a public seed). */
-export async function deriveElGamalKeypair({
-  signer,
-  publicSeed = new Uint8Array(0),
-}: {
-  signer: MessagePartialSigner;
-  publicSeed?: ReadonlyUint8Array;
-}): Promise<DerivedElGamalKeypair> {
-  const message = ElGamalKeypair.signerMessage(new Uint8Array(publicSeed));
-  const signature = await signDerivationMessage(signer, message);
-  const keypair = ElGamalKeypair.fromSignature(signature);
-  const secretKey = new Uint8Array(keypair.secret().toBytes());
-  const elgamalPubkey = getAddressDecoder().decode(new Uint8Array(keypair.pubkey().toBytes()));
-  return { elgamalPubkey, secretKey };
-}
-
-/** Derive an AES-128 key from a signer (optionally domain-separated by a public seed). */
-export async function deriveAeKey({
-  signer,
-  publicSeed = new Uint8Array(0),
-}: {
-  signer: MessagePartialSigner;
-  publicSeed?: ReadonlyUint8Array;
-}): Promise<Uint8Array> {
-  const message = AeKey.signerMessage(new Uint8Array(publicSeed));
-  const signature = await signDerivationMessage(signer, message);
-  return new Uint8Array(AeKey.fromSignature(signature).toBytes());
-}
-
-/** Derive the ElGamal keypair bound to (owner, mint). */
-export async function deriveElGamalKeypairForOwnerMint(input: {
-  signer: MessagePartialSigner;
-  owner: Address;
-  mint: Address;
-}): Promise<DerivedElGamalKeypair> {
-  return deriveElGamalKeypair({
-    signer: input.signer,
-    publicSeed: ownerMintSeed(input.owner, input.mint),
-  });
-}
-
-/** Derive the AES key bound to (owner, mint). */
-export async function deriveAeKeyForOwnerMint(input: {
-  signer: MessagePartialSigner;
-  owner: Address;
-  mint: Address;
-}): Promise<Uint8Array> {
-  return deriveAeKey({ signer: input.signer, publicSeed: ownerMintSeed(input.owner, input.mint) });
+async function confidentialKeysFrom(
+  signer: MessagePartialSigner,
+  message: Uint8Array,
+): Promise<ConfidentialKeypairs> {
+  const keys = ConfidentialKeys.fromSignature(await signDerivationMessage(signer, message));
+  return { elgamalKeypair: keys.elgamal(), aesKey: keys.ae() };
 }
 
 /**
- * Derive the WASM zk-sdk ElGamal keypair and AES key for a confidential-transfer
- * account, bound to (owner, mint). These objects are what the instruction
- * builders and proof generators consume directly.
+ * Derive the wallet's confidential-balances keys: the standard derivation.
+ *
+ * One signature over `solana-conf-bal/v1` yields both keys. Use this unless you
+ * have a specific reason not to — it is what every other standard client
+ * derives for the same wallet, so an account configured here can also be read
+ * by the spl-token CLI and by wallets that implement the standard.
  */
-export async function deriveConfidentialKeypairs(input: {
+export async function deriveConfidentialKeys(input: {
   signer: MessagePartialSigner;
-  owner: Address;
-  mint: Address;
 }): Promise<ConfidentialKeypairs> {
-  const seed = new Uint8Array(ownerMintSeed(input.owner, input.mint));
-  const elgamalSignature = await signDerivationMessage(input.signer, ElGamalKeypair.signerMessage(seed));
-  const aeSignature = await signDerivationMessage(input.signer, AeKey.signerMessage(seed));
+  return confidentialKeysFrom(input.signer, ConfidentialKeys.signerMessage());
+}
+
+/**
+ * Derive seed-scoped confidential-balances keys: a non-standard derivation.
+ *
+ * The signed message becomes `solana-conf-bal/v1 || publicSeed`. Keys derived
+ * from a non-empty seed will NOT match the standard keys other clients derive
+ * for the same wallet, so use this only for schemes that genuinely need keys
+ * scoped more finely than the wallet — single-signer PDA wallets (pass
+ * {@link pdaWalletPublicSeed}) or custom application keying.
+ */
+export async function deriveConfidentialKeysWithSeed(input: {
+  signer: MessagePartialSigner;
+  publicSeed: ReadonlyUint8Array;
+}): Promise<ConfidentialKeypairs> {
+  return confidentialKeysFrom(
+    input.signer,
+    ConfidentialKeys.signerMessageWithSeed(new Uint8Array(input.publicSeed)),
+  );
+}
+
+/**
+ * The canonical `publicSeed` for a single-signer PDA wallet, as
+ * `programId || walletPda || mint || tokenAccount`. Pass the result to
+ * {@link deriveConfidentialKeysWithSeed} so PDA wallets use one seed
+ * convention across implementations.
+ */
+export function pdaWalletPublicSeed(input: {
+  programId: Address;
+  walletPda: Address;
+  mint: Address;
+  tokenAccount: Address;
+}): Uint8Array {
+  const encode = (address: Address) => new Uint8Array(getAddressEncoder().encode(address));
+  return ConfidentialKeys.pdaWalletPublicSeed(
+    encode(input.programId),
+    encode(input.walletPda),
+    encode(input.mint),
+    encode(input.tokenAccount),
+  );
+}
+
+/** An ElGamal public key as an Address, ready for a mint or account config. */
+export function getElGamalPubkeyAddress(keypair: ElGamalKeypair): Address {
+  return getAddressDecoder().decode(new Uint8Array(keypair.pubkey().toBytes()));
+}
+
+/**
+ * The ElGamal half of the standard derivation, with the secret key as raw
+ * bytes. Prefer {@link deriveConfidentialKeys} when you need both keys: it
+ * asks the wallet for one signature instead of two.
+ */
+export async function deriveElGamalKeypair(input: {
+  signer: MessagePartialSigner;
+}): Promise<DerivedElGamalKeypair> {
+  const { elgamalKeypair } = await deriveConfidentialKeys(input);
   return {
-    elgamalKeypair: ElGamalKeypair.fromSignature(elgamalSignature),
-    aesKey: AeKey.fromSignature(aeSignature),
+    elgamalPubkey: getElGamalPubkeyAddress(elgamalKeypair),
+    secretKey: new Uint8Array(elgamalKeypair.secret().toBytes()),
   };
+}
+
+/**
+ * The AES half of the standard derivation, as raw bytes. Prefer
+ * {@link deriveConfidentialKeys} when you need both keys.
+ */
+export async function deriveAeKey(input: { signer: MessagePartialSigner }): Promise<Uint8Array> {
+  const { aesKey } = await deriveConfidentialKeys(input);
+  return new Uint8Array(aesKey.toBytes());
 }

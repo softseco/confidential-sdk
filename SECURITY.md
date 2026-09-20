@@ -12,10 +12,14 @@ seriously and appreciate responsible disclosure.
 
 | Version | Supported |
 |---|---|
-| `1.x`   | ✅ |
-| `< 1.0` | ❌ |
+| `2.x`   | ✅ |
+| `< 2.0` | ❌ |
 
-Security fixes land on the latest `1.x` release of both the TypeScript package and the Rust crate.
+Security fixes land on the latest `2.x` release of both the TypeScript package and the Rust crate.
+
+`2.0.0` changed key derivation to the ecosystem standard. Keys derived by `1.x` are different, so
+an account configured under `1.x` must have its confidential balance applied and withdrawn before
+upgrading — see [CHANGELOG.md](./CHANGELOG.md).
 
 ## Reporting a vulnerability
 

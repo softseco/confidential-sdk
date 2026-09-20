@@ -10,7 +10,7 @@ Rust helpers for **SPL Token-2022 Confidential Transfers**, mirroring the
 TypeScript SDK. Built on [`spl-token-client`](https://crates.io/crates/spl-token-client)
 and [`solana-zk-sdk`](https://crates.io/crates/solana-zk-sdk).
 
-> **Status: `v1.0.1` — stable API.** The crate mirrors the TypeScript helpers
+> **Status: `v2.0.0` — stable API.** The crate mirrors the TypeScript helpers
 > (`configure_account`, `deposit`, `transfer`, `apply_pending_balance`,
 > `decrypt_balance`) plus auditor-key selective disclosure. Confidential transfers
 > depend on Solana's ZK ElGamal Proof Program; validated end-to-end (including
@@ -52,7 +52,9 @@ let amount = decrypt_auditor_amount(&auditor, &ciphertext_lo, &ciphertext_hi)?;
 ```
 
 Keys (`ElGamalKeypair` + `AeKey`) are derived deterministically from the owner's
-signer, bound to the token-account address — recoverable from the wallet alone and
+signer using the standard confidential-balances derivation — one signature over the
+constant message `solana-conf-bal/v1`, bound to the wallet alone and identical
+across every mint and token account, so they are recoverable from the wallet and
 never stored. `derive_account_keys` is exported for advanced use.
 
 ## API
@@ -66,7 +68,7 @@ never stored. `derive_account_keys` is exported for advanced use.
 | `transfer` | Confidentially transfer to another account |
 | `derive_auditor_keypair` | Derive the auditor's ElGamal keypair from its wallet |
 | `decrypt_auditor_amount` | Recover a transfer amount from its auditor ciphertext |
-| `derive_account_keys` | Derive an account's `(ElGamalKeypair, AeKey)` |
+| `derive_account_keys` | Derive the wallet's `(ElGamalKeypair, AeKey)` |
 
 > **Note on `transfer`:** the three required ZK proofs are too large to ship inline
 > (that would put the transaction at ~3.3 KB, over Solana's 1232-byte packet limit).

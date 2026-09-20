@@ -14,6 +14,55 @@ which are released together.
 
 _Nothing yet._
 
+## [2.0.0] - 2026-09-19
+
+### Changed
+- **BREAKING — key derivation now follows the ecosystem standard.** Both the TypeScript package
+  and the Rust crate derive the ElGamal and AES keys from a single signature over the constant
+  message `solana-conf-bal/v1`, expanded through HKDF-SHA512 (`ConfidentialKeys` in
+  `@solana/zk-sdk`, `derive_confidential_keys` in `solana-zk-sdk`). Keys are bound to the signing
+  wallet alone — one ElGamal keypair and one AES key across every mint and token account — and are
+  byte-identical to what the Token-2022 clients and every other standard client derive for the
+  same wallet.
+- **TypeScript** — requires `@solana/zk-sdk` >= 0.5.3, which replaces the per-key
+  `ElGamalKeypair.signerMessage` / `AeKey.signerMessage` derivation with the unified
+  `ConfidentialKeys` API.
+- **Rust** — requires `solana-zk-sdk` 7, where `encryption::derivation` lives, together with
+  `spl-token-client` 0.19.1 and `spl-token-confidential-transfer-proof-generation` 0.6.1. All
+  three move as a set: the 0.19.0 and 0.6.0 releases are built against `solana-zk-sdk` 6, and a
+  graph holding two majors compiles but does not type-check, because `ElGamalKeypair` from one
+  major is a different type from `ElGamalKeypair` in the other.
+
+### Fixed
+- **The two language bindings derived different keys.** TypeScript seeded the derivation with the
+  64-byte tuple `(owner, mint)`; Rust seeded it with the 32-byte token account address. An account
+  configured with one binding therefore could not be read with the other, and neither matched the
+  spl-token CLI. The existing cross-language test compared the two implementations at the
+  primitive level — the same signer and the same explicit seed — so it passed while the two halves
+  fed that primitive different seeds. Found in review, before any mainnet use.
+
+### Added
+- `deriveConfidentialKeys({ signer })` — the standard derivation, one signature for both keys.
+- `deriveConfidentialKeysWithSeed({ signer, publicSeed })` — explicitly non-standard, seed-scoped
+  derivation for schemes that need keys scoped more finely than the wallet.
+- `pdaWalletPublicSeed({ programId, walletPda, mint, tokenAccount })` — the canonical seed for
+  single-signer PDA wallets, so PDA and passkey wallets share one convention.
+- `getElGamalPubkeyAddress(keypair)` — an ElGamal public key as an `Address`.
+- Tests that pin the derivation message bytes, pin a standard-derivation vector, and assert that
+  every derivation helper in the package agrees — the drift above cannot recur silently.
+
+### Removed
+- `deriveConfidentialKeypairs`, `deriveElGamalKeypairForOwnerMint` and `deriveAeKeyForOwnerMint`.
+  They are not deprecated wrappers, because a wrapper that ignored its own `owner` and `mint`
+  arguments would silently return different keys than 1.x did. `deriveElGamalKeypair` and
+  `deriveAeKey` remain but no longer take a `publicSeed`.
+
+### Migration
+Keys derived by 1.x and 2.0 are different. Before upgrading, apply the pending balance and
+withdraw the confidential balance of any account configured with 1.x; then re-configure it with
+2.0. There is no in-place migration, because the on-chain account stores the ElGamal public key
+that the old derivation produced.
+
 ## [1.0.1] - 2026-07-14
 
 ### Fixed
@@ -62,6 +111,7 @@ to that surface under semantic versioning.
 - Local-validator integration tests (gated behind `CT_LOCAL_PROGRAM=1`) and validator-free unit
   tests in CI. Published to npm.
 
+[2.0.0]: https://github.com/softseco/confidential-sdk/releases/tag/v2.0.0
 [1.0.1]: https://github.com/softseco/confidential-sdk/releases/tag/v1.0.1
 [1.0.0]: https://github.com/softseco/confidential-sdk/releases/tag/v1.0.0
 [0.2.0]: https://github.com/softseco/confidential-sdk/releases/tag/v0.2.0

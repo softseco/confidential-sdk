@@ -19,9 +19,10 @@ export {
 export type { DecryptTransferAmountAsAuditorInput } from "./auditor";
 export {
   deriveAeKey,
-  deriveAeKeyForOwnerMint,
-  deriveConfidentialKeypairs,
+  deriveConfidentialKeys,
+  deriveConfidentialKeysWithSeed,
   deriveElGamalKeypair,
-  deriveElGamalKeypairForOwnerMint,
+  getElGamalPubkeyAddress,
+  pdaWalletPublicSeed,
 } from "./keys";
 export type { ConfidentialKeypairs, DerivedElGamalKeypair } from "./keys";

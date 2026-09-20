@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 name: CI
 
 on:
@@ -13,8 +14,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      # No `cache: npm` yet — that needs a committed package-lock.json.
+          cache: npm
       # `.npmrc` (legacy-peer-deps) lets the kit-6 stack install cleanly.
-      - run: npm install
+      - run: npm ci
+      - run: npm run typecheck
       - run: npm test
-      # typecheck + build are re-enabled once the full SDK surface compiles.
+      - run: npm run build

@@ -33,7 +33,7 @@ import {
   fetchToken,
   findAssociatedTokenPda,
 } from "@solana-program/token-2022";
-import { deriveConfidentialKeypairs } from "./keys";
+import { deriveConfidentialKeys } from "./keys";
 import { getConfidentialTransferInstructionPlan } from "./internal/confidentialTransferProof";
 
 const bigintReplacer = (_key: string, value: unknown) =>
@@ -109,11 +109,7 @@ export async function transfer(input: TransferInput): Promise<TransferResult> {
     )[0];
   }
 
-  const { elgamalKeypair, aesKey } = await deriveConfidentialKeypairs({
-    signer: input.owner,
-    owner: input.owner.address,
-    mint: input.mint,
-  });
+  const { elgamalKeypair, aesKey } = await deriveConfidentialKeys({ signer: input.owner });
 
   const [{ data: sourceTokenAccount }, { data: destinationTokenAccount }] = await Promise.all([
     fetchToken(input.rpc, sourceToken),
