@@ -9,6 +9,7 @@
 // (which loads its WASM via fs), so the SDK runs natively on Node with no shim.
 // The proof math and on-chain layout are unchanged.
 import {
+  type AccountRole,
   generateKeyPairSigner,
   getAddressEncoder,
   isSome,
@@ -80,6 +81,8 @@ export type GetConfidentialTransferInstructionPlanInput = {
   sourceElgamalKeypair: ElGamalKeypair;
   aesKey: AeKey;
   multiSigners?: Array<TransactionSigner>;
+  /** Accounts the mint's transfer hook needs, appended to the transfer instruction. */
+  transferHookAccounts?: ReadonlyArray<{ address: Address; role: AccountRole }>;
   programAddress?: Address;
   payer: TransactionSigner;
   rpc: Rpc<GetMinimumBalanceForRentExemptionApi>;
@@ -208,6 +211,18 @@ async function buildContextStateProofPlan(
  * proofs (equality, grouped-ciphertext validity, batched range) via context-state
  * accounts.
  */
+/** Append the mint's transfer-hook accounts to an instruction, if it has any. */
+function withTransferHookAccounts<T extends { accounts?: unknown }>(
+  instruction: T,
+  hookAccounts?: ReadonlyArray<{ address: Address; role: AccountRole }>,
+): T {
+  if (hookAccounts == null || hookAccounts.length === 0) return instruction;
+  return {
+    ...instruction,
+    accounts: [...((instruction.accounts ?? []) as unknown[]), ...hookAccounts],
+  } as unknown as T;
+}
+
 export async function getConfidentialTransferInstructionPlan(
   input: GetConfidentialTransferInstructionPlanInput,
 ): Promise<InstructionPlan> {
@@ -323,7 +338,8 @@ export async function getConfidentialTransferInstructionPlan(
       ciphertextValidityProofPlan.setup,
       rangeProofPlan.setup,
     ]),
-    getConfidentialTransferInstruction(
+    withTransferHookAccounts(
+      getConfidentialTransferInstruction(
       {
         sourceToken: input.sourceToken,
         mint: input.mint,
@@ -341,6 +357,8 @@ export async function getConfidentialTransferInstructionPlan(
         multiSigners: input.multiSigners,
       },
       { programAddress: input.programAddress ?? TOKEN_2022_PROGRAM_ADDRESS },
+      ),
+      input.transferHookAccounts,
     ),
     parallelInstructionPlan([
       equalityProofPlan.cleanup,

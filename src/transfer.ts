@@ -35,6 +35,7 @@ import {
 } from "@solana-program/token-2022";
 import { deriveConfidentialKeys } from "./keys";
 import { getConfidentialTransferInstructionPlan } from "./internal/confidentialTransferProof";
+import { resolveTransferHookAccounts } from "./internal/transferHook";
 
 const bigintReplacer = (_key: string, value: unknown) =>
   typeof value === "bigint" ? value.toString() : value;
@@ -109,6 +110,17 @@ export async function transfer(input: TransferInput): Promise<TransferResult> {
     )[0];
   }
 
+  // Token-2022 calls the mint's transfer hook on a confidential transfer too, and the hook's
+  // accounts have to travel with the instruction or the transfer fails with MissingAccount.
+  const transferHookAccounts = await resolveTransferHookAccounts({
+    rpc: input.rpc,
+    mint: input.mint,
+    sourceToken,
+    destinationToken,
+    owner: input.owner.address,
+    programAddress,
+  });
+
   const { elgamalKeypair, aesKey } = await deriveConfidentialKeys({ signer: input.owner });
 
   const [{ data: sourceTokenAccount }, { data: destinationTokenAccount }] = await Promise.all([
@@ -129,6 +141,7 @@ export async function transfer(input: TransferInput): Promise<TransferResult> {
     sourceElgamalKeypair: elgamalKeypair,
     aesKey,
     auditorElgamalPubkey: input.auditorElgamalPubkey,
+    transferHookAccounts,
     programAddress,
   });
 

@@ -18,6 +18,12 @@ export {
 } from "./auditor";
 export type { DecryptTransferAmountAsAuditorInput } from "./auditor";
 export {
+  findExtraAccountMetaListPda,
+  getTransferHookProgram,
+  resolveTransferHookAccounts,
+} from "./internal/transferHook";
+export type { ResolveTransferHookAccountsInput, ResolvedAccount } from "./internal/transferHook";
+export {
   deriveAeKey,
   deriveConfidentialKeys,
   deriveConfidentialKeysWithSeed,

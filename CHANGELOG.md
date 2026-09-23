@@ -10,6 +10,21 @@ and the Rust crate
 ([`softseco-confidential-transfers`](https://crates.io/crates/softseco-confidential-transfers)),
 which are released together.
 
+## [2.1.0]
+
+### Added
+
+- `transfer()` now resolves a mint's transfer-hook accounts and appends them to the confidential
+  transfer instruction. Token-2022 invokes the hook on a confidential transfer with an amount of
+  `u64::MAX`, and without those accounts the transfer fails with `MissingAccount`. Mints without a
+  transfer hook are unaffected.
+- `resolveTransferHookAccounts`, `getTransferHookProgram` and `findExtraAccountMetaListPda` are
+  exported for callers that build their own instructions.
+
+### Notes
+
+- The Rust crate is unchanged at 2.0.0.
+
 ## [Unreleased]
 
 _Nothing yet._
