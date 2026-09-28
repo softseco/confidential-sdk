@@ -27,11 +27,13 @@ import {
   closeContextStateProof,
   verifyBatchedGroupedCiphertext3HandlesValidity,
   verifyBatchedRangeProofU128,
+  verifyBatchedRangeProofU64,
   verifyCiphertextCommitmentEquality,
 } from "@solana-program/zk-elgamal-proof";
 import {
   TOKEN_2022_PROGRAM_ADDRESS,
   getConfidentialTransferInstruction,
+  getConfidentialWithdrawInstruction,
   type Token,
 } from "@solana-program/token-2022";
 import {
@@ -39,6 +41,7 @@ import {
   AeKey,
   BatchedGroupedCiphertext3HandlesValidityProofData,
   BatchedRangeProofU128Data,
+  BatchedRangeProofU64Data,
   CiphertextCommitmentEqualityProofData,
   ElGamalCiphertext,
   ElGamalKeypair,
@@ -50,6 +53,7 @@ import {
 
 import {
   extractCiphertextFromGroupedBytes,
+  subtractAmountFromCiphertext,
   subtractWithLoHiCiphertexts,
 } from "./confidentialTransferArithmetic";
 
@@ -365,5 +369,94 @@ export async function getConfidentialTransferInstructionPlan(
       ciphertextValidityProofPlan.cleanup,
       rangeProofPlan.cleanup,
     ]),
+  ]);
+}
+
+export type GetConfidentialWithdrawInstructionPlanInput = {
+  /** Token account to withdraw from. */
+  token: Address;
+  mint: Address;
+  /** The decoded token account, read just before building the plan. */
+  tokenAccount: Token;
+  authority: Address | TransactionSigner;
+  amount: number | bigint;
+  decimals: number;
+  elgamalKeypair: ElGamalKeypair;
+  aesKey: AeKey;
+  multiSigners?: Array<TransactionSigner>;
+  programAddress?: Address;
+  payer: TransactionSigner;
+  rpc: Rpc<GetMinimumBalanceForRentExemptionApi>;
+};
+
+/**
+ * Returns an instruction plan that moves tokens from the encrypted available
+ * balance back to the public balance of the same account. Verifies the two
+ * required proofs (ciphertext-commitment equality and a U64 range proof on the
+ * remaining balance) via context-state accounts, runs the withdraw, and closes
+ * the proof accounts. Adapted from the upstream helper of the same name.
+ */
+export async function getConfidentialWithdrawInstructionPlan(
+  input: GetConfidentialWithdrawInstructionPlanInput,
+): Promise<InstructionPlan> {
+  const account = getRequiredConfidentialTransferAccountExtension(input.tokenAccount);
+  const amount = BigInt(input.amount);
+  if (amount <= 0n) {
+    throw new Error(`withdraw amount must be greater than zero, got ${amount}`);
+  }
+  const newAvailableBalance = computeNewAvailableBalance(
+    decryptAvailableBalance(account, input.aesKey),
+    amount,
+  );
+
+  const remainingBalanceOpening = new PedersenOpening();
+  const remainingBalanceCommitment = PedersenCommitment.from(newAvailableBalance, remainingBalanceOpening);
+  const remainingBalanceCiphertext = parseElGamalCiphertext(
+    subtractAmountFromCiphertext(account.availableBalance, amount),
+  );
+
+  const equalityProofData = new CiphertextCommitmentEqualityProofData(
+    input.elgamalKeypair,
+    remainingBalanceCiphertext,
+    remainingBalanceCommitment,
+    remainingBalanceOpening,
+    newAvailableBalance,
+  );
+  const rangeProofData = new BatchedRangeProofU64Data(
+    [remainingBalanceCommitment],
+    new BigUint64Array([newAvailableBalance]),
+    Uint8Array.from([REMAINING_BALANCE_BIT_LENGTH]),
+    [remainingBalanceOpening],
+  );
+
+  const [equalityProofPlan, rangeProofPlan] = await Promise.all([
+    buildContextStateProofPlan(
+      equalityProofData.toBytes(),
+      verifyCiphertextCommitmentEquality,
+      input.payer,
+      input.rpc,
+    ),
+    buildContextStateProofPlan(rangeProofData.toBytes(), verifyBatchedRangeProofU64, input.payer, input.rpc),
+  ]);
+
+  return sequentialInstructionPlan([
+    parallelInstructionPlan([equalityProofPlan.setup, rangeProofPlan.setup]),
+    getConfidentialWithdrawInstruction(
+      {
+        token: input.token,
+        mint: input.mint,
+        equalityRecord: equalityProofPlan.address,
+        rangeRecord: rangeProofPlan.address,
+        authority: input.authority,
+        amount,
+        decimals: input.decimals,
+        newDecryptableAvailableBalance: input.aesKey.encrypt(newAvailableBalance).toBytes(),
+        equalityProofInstructionOffset: 0,
+        rangeProofInstructionOffset: 0,
+        multiSigners: input.multiSigners,
+      },
+      { programAddress: input.programAddress ?? TOKEN_2022_PROGRAM_ADDRESS },
+    ),
+    parallelInstructionPlan([equalityProofPlan.cleanup, rangeProofPlan.cleanup]),
   ]);
 }

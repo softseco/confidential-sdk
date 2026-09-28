@@ -1,15 +1,30 @@
 {
   "name": "@softseco/confidential-transfers",
-  "version": "2.1.0",
-  "description": "Open-source TypeScript SDK for Token-2022 Confidential Transfers on Solana.",
+  "version": "3.0.0",
+  "description": "TypeScript SDK for Token-2022 confidential transfers on Solana: configure, deposit, apply, transfer, withdraw, decrypt.",
+  "keywords": [
+    "solana",
+    "token-2022",
+    "confidential-transfers",
+    "confidential-balances",
+    "zero-knowledge",
+    "elgamal",
+    "privacy",
+    "stablecoin",
+    "sdk"
+  ],
   "license": "Apache-2.0",
   "author": "Joachim Szamborski (Softseco)",
+  "homepage": "https://github.com/softseco/confidential-sdk#readme",
+  "bugs": {
+    "url": "https://github.com/softseco/confidential-sdk/issues"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/softseco/confidential-sdk.git"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20.18.0"
   },
   "type": "commonjs",
   "main": "./dist/index.js",
@@ -34,23 +49,27 @@
   "scripts": {
     "build": "tsup && tsc --emitDeclarationOnly",
     "prepublishOnly": "npm run build",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.examples.json",
     "test": "tsx node_modules/mocha/bin/_mocha --timeout 120000 \"test/**/*.test.ts\"",
     "coverage": "c8 --all --include 'src/**' --reporter=text --reporter=html tsx node_modules/mocha/bin/_mocha --timeout 120000 \"test/**/*.test.ts\"",
     "example": "tsx examples/confidential-transfer.ts",
+    "example:devnet": "tsx examples/devnet.ts",
     "validator": "bash scripts/start-test-validator.sh",
     "clean": "rm -rf dist"
   },
   "dependencies": {
     "@noble/curves": "^1.9.7",
-    "@solana-program/system": "^0.12.2",
-    "@solana-program/token-2022": "^0.11.0",
-    "@solana-program/zk-elgamal-proof": "^0.1.0",
-    "@solana/kit": "^6.10.0",
-    "@solana/sysvars": "^5.0.0",
+    "@solana-program/system": "^0.15.0",
+    "@solana-program/token-2022": "^0.19.0",
+    "@solana-program/zk-elgamal-proof": "^0.4.0",
+    "@solana/sysvars": "^8.3.0",
     "@solana/zk-sdk": "^0.5.3"
   },
+  "peerDependencies": {
+    "@solana/kit": "^8.3.0"
+  },
   "devDependencies": {
+    "@solana/kit": "^8.3.0",
     "@types/chai": "^4.3.14",
     "@types/mocha": "^10.0.6",
     "@types/node": "^20.12.0",

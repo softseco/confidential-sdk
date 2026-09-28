@@ -8,17 +8,24 @@ import { generateKeyPairSigner, none, some } from "@solana/kit";
 import { expect } from "chai";
 
 import * as sdk from "../src/index";
+import { ElGamalCiphertext, ElGamalKeypair } from "@solana/zk-sdk/node";
+
 import {
   extractCiphertextFromGroupedBytes,
+  subtractAmountFromCiphertext,
   subtractWithLoHiCiphertexts,
 } from "../src/internal/confidentialTransferArithmetic";
-import { getConfidentialTransferInstructionPlan } from "../src/internal/confidentialTransferProof";
+import {
+  getConfidentialTransferInstructionPlan,
+  getConfidentialWithdrawInstructionPlan,
+} from "../src/internal/confidentialTransferProof";
 import {
   deriveAeKey,
   deriveConfidentialKeysWithSeed,
   deriveElGamalKeypair,
 } from "../src/keys";
 import { transfer } from "../src/transfer";
+import { withdraw } from "../src/withdraw";
 
 describe("public API", () => {
   it("exports every SDK function", () => {
@@ -28,6 +35,13 @@ describe("public API", () => {
       "applyPendingBalance",
       "decryptBalance",
       "transfer",
+      "withdraw",
+      "resolveTransferHookAccounts",
+      "getTransferHookProgram",
+      "findExtraAccountMetaListPda",
+      "deriveAuditorElgamalKeypair",
+      "getAuditorElgamalPubkey",
+      "decryptTransferAmountAsAuditor",
       "deriveConfidentialKeys",
       "deriveConfidentialKeysWithSeed",
       "deriveElGamalKeypair",
@@ -212,5 +226,97 @@ describe("input guards", () => {
     }
     expect(err).to.be.an("error");
     expect((err as Error).message).to.contain("exceeds the confidential-transfer maximum");
+  });
+});
+
+describe("withdraw", () => {
+  /** A token account whose confidential available balance holds `balance`. */
+  async function accountWithBalance(balance: bigint) {
+    const owner = await generateKeyPairSigner();
+    const { elgamalKeypair, aesKey } = await sdk.deriveConfidentialKeys({ signer: owner });
+    const tokenAccount = {
+      extensions: some([
+        {
+          __kind: "ConfidentialTransferAccount",
+          elgamalPubkey: sdk.getElGamalPubkeyAddress(elgamalKeypair),
+          availableBalance: elgamalKeypair.pubkey().encryptU64(balance).toBytes(),
+          decryptableAvailableBalance: aesKey.encrypt(balance).toBytes(),
+        },
+      ]),
+    } as never;
+    return { owner, elgamalKeypair, aesKey, tokenAccount };
+  }
+
+  const rentRpc = {
+    getMinimumBalanceForRentExemption: () => ({ send: async () => 1_000_000n }),
+  } as never;
+
+  it("subtracts a plaintext amount from an encrypted balance", () => {
+    const keypair = new ElGamalKeypair();
+    const ciphertext = keypair.pubkey().encryptU64(500n).toBytes();
+    const remaining = subtractAmountFromCiphertext(ciphertext, 200n);
+    const parsed = ElGamalCiphertext.fromBytes(remaining);
+    expect(parsed).to.not.equal(undefined);
+    expect(keypair.secret().decrypt(parsed!)).to.equal(300n);
+  });
+
+  it("builds a plan for an amount within the available balance", async () => {
+    const { owner, elgamalKeypair, aesKey, tokenAccount } = await accountWithBalance(500n);
+    const plan = await getConfidentialWithdrawInstructionPlan({
+      payer: owner,
+      rpc: rentRpc,
+      token: (await generateKeyPairSigner()).address,
+      mint: (await generateKeyPairSigner()).address,
+      tokenAccount,
+      authority: owner,
+      amount: 200n,
+      decimals: 2,
+      elgamalKeypair,
+      aesKey,
+    });
+    expect(plan.kind).to.equal("sequential");
+  });
+
+  it("rejects an amount above the available balance", async () => {
+    const { owner, elgamalKeypair, aesKey, tokenAccount } = await accountWithBalance(500n);
+    let err: unknown;
+    try {
+      await getConfidentialWithdrawInstructionPlan({
+        payer: owner,
+        rpc: rentRpc,
+        token: (await generateKeyPairSigner()).address,
+        mint: (await generateKeyPairSigner()).address,
+        tokenAccount,
+        authority: owner,
+        amount: 600n,
+        decimals: 2,
+        elgamalKeypair,
+        aesKey,
+      });
+    } catch (e) {
+      err = e;
+    }
+    expect(err).to.be.an("error");
+    expect((err as Error).message).to.contain("Insufficient funds");
+  });
+
+  it("rejects a zero amount before touching the network", async () => {
+    const owner = await generateKeyPairSigner();
+    let err: unknown;
+    try {
+      await withdraw({
+        rpc: {} as never,
+        rpcSubscriptions: {} as never,
+        payer: owner,
+        owner,
+        mint: (await generateKeyPairSigner()).address,
+        amount: 0n,
+        decimals: 2,
+      });
+    } catch (e) {
+      err = e;
+    }
+    expect(err).to.be.an("error");
+    expect((err as Error).message).to.contain("greater than zero");
   });
 });

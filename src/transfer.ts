@@ -6,19 +6,8 @@
 // batched range), verifies each into a dedicated context-state account, runs the
 // transfer that references those accounts, and finally closes them. The whole
 // flow is produced as an InstructionPlan by the canonical SPL helper and executed
-// here as a sequence of transactions.
+// as a sequence of transactions (see internal/executePlan.ts).
 import {
-  assertIsTransactionWithBlockhashLifetime,
-  createTransactionMessage,
-  createTransactionPlanExecutor,
-  createTransactionPlanner,
-  getBase64EncodedWireTransaction,
-  getSignatureFromTransaction,
-  pipe,
-  sendAndConfirmTransactionFactory,
-  setTransactionMessageFeePayerSigner,
-  setTransactionMessageLifetimeUsingBlockhash,
-  signTransactionMessageWithSigners,
   type Address,
   type MessagePartialSigner,
   type Rpc,
@@ -35,31 +24,8 @@ import {
 } from "@solana-program/token-2022";
 import { deriveConfidentialKeys } from "./keys";
 import { getConfidentialTransferInstructionPlan } from "./internal/confidentialTransferProof";
+import { executeInstructionPlan } from "./internal/executePlan";
 import { resolveTransferHookAccounts } from "./internal/transferHook";
-
-const bigintReplacer = (_key: string, value: unknown) =>
-  typeof value === "bigint" ? value.toString() : value;
-
-/** Recursively find the first failed leaf in a transaction-plan result tree. */
-function findFailedStep(node: unknown): { error?: unknown } | undefined {
-  if (node == null || typeof node !== "object") return undefined;
-  const n = node as Record<string, unknown>;
-  if (n.kind === "single") {
-    return n.status === "failed" ? (n as { error?: unknown }) : undefined;
-  }
-  for (const value of Object.values(n)) {
-    if (Array.isArray(value)) {
-      for (const child of value) {
-        const found = findFailedStep(child);
-        if (found) return found;
-      }
-    } else if (value && typeof value === "object") {
-      const found = findFailedStep(value);
-      if (found) return found;
-    }
-  }
-  return undefined;
-}
 
 export type TransferInput = {
   rpc: Rpc<SolanaRpcApi>;
@@ -145,67 +111,13 @@ export async function transfer(input: TransferInput): Promise<TransferResult> {
     programAddress,
   });
 
-  const planner = createTransactionPlanner({
-    createTransactionMessage: () =>
-      pipe(createTransactionMessage({ version: 0 }), (tx) =>
-        setTransactionMessageFeePayerSigner(input.payer, tx),
-      ),
-  });
-  const transactionPlan = await planner(instructionPlan);
-
-  const send = sendAndConfirmTransactionFactory({
+  const signatures = await executeInstructionPlan({
     rpc: input.rpc,
     rpcSubscriptions: input.rpcSubscriptions,
+    payer: input.payer,
+    instructionPlan,
+    label: "confidential transfer",
   });
-  const signatures: Signature[] = [];
-
-  const executor = createTransactionPlanExecutor({
-    executeTransactionMessage: async (_context, message) => {
-      const { value: latestBlockhash } = await input.rpc.getLatestBlockhash().send();
-      const signed = await signTransactionMessageWithSigners(
-        setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, message),
-      );
-
-      const simulation = await input.rpc
-        .simulateTransaction(getBase64EncodedWireTransaction(signed), {
-          encoding: "base64",
-          replaceRecentBlockhash: true,
-          sigVerify: false,
-        })
-        .send();
-      if (simulation.value.err) {
-        throw new Error(
-          "confidential transfer step failed simulation: " +
-            JSON.stringify(simulation.value.err, bigintReplacer) +
-            "\n--- program logs ---\n" +
-            (simulation.value.logs ?? []).join("\n"),
-        );
-      }
-
-      assertIsTransactionWithBlockhashLifetime(signed);
-      await send(signed, { commitment: "confirmed", skipPreflight: true });
-      const signature = getSignatureFromTransaction(signed);
-      signatures.push(signature);
-      return signature;
-    },
-  });
-
-  let result: Awaited<ReturnType<typeof executor>>;
-  try {
-    result = await executor(transactionPlan);
-  } catch (e) {
-    const wrapped = e as { context?: { transactionPlanResult?: unknown }; cause?: unknown };
-    const failed =
-      findFailedStep(wrapped?.context?.transactionPlanResult) ?? findFailedStep(wrapped?.cause);
-    if (failed?.error instanceof Error) throw failed.error;
-    throw e;
-  }
-  const failed = findFailedStep(result);
-  if (failed) {
-    throw failed.error instanceof Error
-      ? failed.error
-      : new Error("confidential transfer failed: " + JSON.stringify(failed.error, bigintReplacer));
-  }
 
   return { sourceToken, destinationToken, signatures };
 }

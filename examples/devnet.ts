@@ -1,9 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Devnet smoke test for @softseco/confidential-transfers.
-// Same flow as examples/confidential-transfer.ts, but against public devnet and
-// paying from the local CLI wallet (~/.config/solana/id.json).
+// Devnet round trip for @softseco/confidential-transfers: configure two accounts,
+// deposit, apply, transfer confidentially, withdraw back to public, decrypt.
+// Pays from the local Solana CLI wallet (~/.config/solana/id.json), which needs
+// about 0.8 devnet SOL.
 //
+//   solana airdrop 1 --url devnet        (or https://faucet.solana.com)
+//   npm run example:devnet
+//
+// Optional: SOLANA_KEYPAIR=/path/to/id.json, DEVNET_RPC / DEVNET_WS for your own endpoint.
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 
@@ -13,11 +18,13 @@ import {
   extension,
   getInitializeConfidentialTransferMintInstruction,
   getInitializeMint2Instruction,
+  fetchToken,
   getMintSize,
   getMintToInstruction,
 } from "@solana-program/token-2022";
 import {
   appendTransactionMessageInstructions,
+  assertIsTransactionWithBlockhashLifetime,
   createKeyPairSignerFromBytes,
   createSolanaRpc,
   createSolanaRpcSubscriptions,
@@ -42,6 +49,7 @@ import {
   decryptBalance,
   deposit,
   transfer,
+  withdraw,
 } from "../src/index";
 
 // Public devnet RPC rate-limits hard (HTTP 429). Retry with the server's own backoff,
@@ -80,7 +88,9 @@ async function sendInstructions(payer: TransactionSigner, instructions: Instruct
     (tx) => setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, tx),
     (tx) => appendTransactionMessageInstructions(instructions, tx),
   );
-  await sendAndConfirm(await signTransactionMessageWithSigners(message), { commitment: "confirmed" });
+  const signed = await signTransactionMessageWithSigners(message);
+  assertIsTransactionWithBlockhashLifetime(signed);
+  await sendAndConfirm(signed, { commitment: "confirmed" });
 }
 
 async function fund(payer: TransactionSigner, destination: KeyPairSigner, sol: number): Promise<void> {
@@ -127,7 +137,7 @@ async function createConfidentialMint(payer: TransactionSigner, decimals = 2) {
 }
 
 async function main() {
-  console.log("RPC:", RPC_URL);
+  console.log("RPC:", new URL(RPC_URL).origin); // origin only, so an API key in the query string is never printed
   const payer = await loadCliWallet();
   const { value: balance } = await rpc.getBalance(payer.address).send();
   console.log("payer:", payer.address, "balance:", Number(balance) / 1e9, "SOL");
@@ -172,11 +182,20 @@ async function main() {
   await pause();
   await applyPendingBalance({ rpc, rpcSubscriptions, payer, owner: bob, mint });
 
-  console.log("\n4) final decrypted balances");
-  console.log("   bob:  ", (await decryptBalance({ rpc, owner: bob, mint })).toString());
-  console.log("   alice:", (await decryptBalance({ rpc, owner: alice, mint })).toString());
+  const back = 400n;
+  console.log(`\n4) withdraw ${back} of Bob's confidential balance back to public`);
+  const withdrawn = await withdraw({ rpc, rpcSubscriptions, payer, owner: bob, mint, amount: back, decimals });
+  console.log("   transactions:", withdrawn.signatures.length);
+  for (const s of withdrawn.signatures) console.log("   https://explorer.solana.com/tx/" + s + "?cluster=devnet");
+  await pause();
+
+  console.log("\n5) final balances");
+  const bobPublic = (await fetchToken(rpc, withdrawn.token)).data.amount;
+  console.log("   bob confidential:", (await decryptBalance({ rpc, owner: bob, mint })).toString());
+  console.log("   bob public:      ", bobPublic.toString());
+  console.log("   alice:           ", (await decryptBalance({ rpc, owner: alice, mint })).toString());
   console.log("\nmint on explorer: https://explorer.solana.com/address/" + mint + "?cluster=devnet");
-  console.log("RESULT: confidential transfers work on devnet with the SDK");
+  console.log("RESULT: deposit, transfer and withdraw work on devnet with the SDK");
 }
 
 main().then(

@@ -24,6 +24,7 @@ import {
 import {
   airdropFactory,
   appendTransactionMessageInstructions,
+  assertIsTransactionWithBlockhashLifetime,
   createSolanaRpc,
   createSolanaRpcSubscriptions,
   createTransactionMessage,
@@ -78,7 +79,9 @@ async function sendInstructions(
     (tx) => setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, tx),
     (tx) => appendTransactionMessageInstructions(instructions, tx),
   );
-  await sendAndConfirm(await signTransactionMessageWithSigners(message), { commitment: "confirmed" });
+  const signed = await signTransactionMessageWithSigners(message);
+  assertIsTransactionWithBlockhashLifetime(signed);
+  await sendAndConfirm(signed, { commitment: "confirmed" });
 }
 
 /** Create a fresh mint configured for confidential transfers (auto-approve, no auditor). */

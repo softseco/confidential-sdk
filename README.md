@@ -6,45 +6,64 @@
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE)
 
 Open-source TypeScript SDK for **Token-2022 Confidential Transfers** on Solana, built on
-[`@solana/kit`](https://github.com/anza-xyz/kit) (web3.js v2). It packages ElGamal/AES key
-handling, zero-knowledge proof generation, proof-context accounts, and the confidential-transfer
-instructions into a handful of clean async functions — so you can add encrypted balances and
-private transfers without hand-assembling the primitives.
+[`@solana/kit`](https://github.com/anza-xyz/kit). It packages ElGamal/AES key handling,
+zero-knowledge proof generation, proof-context accounts and the confidential-transfer
+instructions into a handful of async functions, so you can add encrypted balances and private
+transfers without hand-assembling the primitives.
 
-A Rust crate mirroring the same helpers is published alongside it — see [Rust](#rust).
+A Rust crate with the core helpers lives in [`rust/`](#rust).
 
-> **Status: `v2.0.0` — stable API.** The public surface follows [semantic versioning](https://semver.org);
-> breaking changes will bump the major version. **2.0.0 changes key derivation** to the Solana
-> ecosystem standard, so keys derived by 1.x are different — see
-> [CHANGELOG.md](./CHANGELOG.md) for the migration. Confidential transfers depend on Solana's ZK ElGamal
-> Proof Program: this SDK is developed and validated against a **local validator** running that program
-> plus a client-matching Token-2022 build (see [Local development](#local-development)). Verify current
-> support on your target cluster before deploying beyond a local validator. Runtime: **Node ≥ 20**.
+> **Status: `v3.0.0`.** Built on `@solana/kit` 8. The whole flow (configure, deposit, apply,
+> transfer, withdraw) runs end-to-end on **devnet** and against a local validator. The SDK is
+> self-audited, not independently audited. It runs on **Node ≥ 20.18** (servers, scripts,
+> backends). It does not run in the browser yet, because it loads the Node build of
+> `@solana/zk-sdk`. Confidential transfers depend on Solana's ZK ElGamal Proof Program: check that
+> it is enabled on your target cluster (it is on devnet). Upgrading from 2.x means moving your app
+> to `@solana/kit` 8; see [CHANGELOG.md](./CHANGELOG.md).
+
+## Try it on devnet
+
+```bash
+git clone https://github.com/softseco/confidential-sdk
+cd confidential-sdk
+npm install
+solana airdrop 1 --url devnet     # or https://faucet.solana.com, the example needs ~0.8 SOL
+npm run example:devnet
+```
+
+[`examples/devnet.ts`](./examples/devnet.ts) pays from your Solana CLI wallet
+(`~/.config/solana/id.json`, or set `SOLANA_KEYPAIR`). It creates a confidential mint and two
+wallets, then configures both accounts, deposits, applies, transfers confidentially, withdraws
+part of the balance back to public and decrypts the results. Every transaction is printed with an
+explorer link. The public devnet RPC rate-limits; set `DEVNET_RPC` and `DEVNET_WS` to your own
+endpoint if it gets slow.
 
 ## Features
 
-- **`configureAccount`** — enable a Token-2022 account for confidential transfers (with the PubkeyValidity ZK proof)
-- **`deposit`** — move tokens from the public balance into the confidential **pending** balance
-- **`applyPendingBalance`** — roll the pending balance into the spendable **available** balance
-- **`decryptBalance`** — decrypt your own available balance locally (read-only)
-- **`transfer`** — privately transfer an encrypted amount (equality + ciphertext-validity + range proofs, verified via context-state accounts)
-- **Auditor selective disclosure** — derive an auditor ElGamal identity and recover transfer amounts on an auditor-enabled mint, without the power to spend
+- **`configureAccount`** enables a Token-2022 account for confidential transfers (with the PubkeyValidity ZK proof)
+- **`deposit`** moves tokens from the public balance into the confidential **pending** balance
+- **`applyPendingBalance`** rolls the pending balance into the spendable **available** balance
+- **`decryptBalance`** decrypts your own available balance locally (read-only)
+- **`transfer`** sends an encrypted amount to another account (equality, ciphertext-validity and range proofs, verified via context-state accounts)
+- **`withdraw`** moves tokens from the confidential available balance back to the public balance (equality and range proofs)
+- **Transfer-hook mints**: `transfer` resolves the mint's transfer-hook accounts, so confidential transfers work on mints that enforce rules through a hook
+- **Auditor selective disclosure**: derive an auditor ElGamal identity and recover transfer amounts on an auditor-enabled mint, without the power to spend
 
 Keys are derived deterministically from the account owner's wallet signer using the standard
 confidential-balances derivation: one signature over the constant message `solana-conf-bal/v1`,
-expanded through HKDF-SHA512 into the ElGamal and AES keys. They are bound to the wallet alone —
-one keypair across every mint and token account — so they are recoverable from the wallet, never
-need to be stored, and match what the Rust `solana-zk-sdk`, the Token-2022 clients and every other
-standard client derive for the same wallet.
+expanded through HKDF-SHA512 into the ElGamal and AES keys. They are bound to the wallet alone
+(one keypair across every mint and token account), so they are recoverable from the wallet, never
+need to be stored, and match what the Rust `solana-zk-sdk` and the Token-2022 clients derive for
+the same wallet.
 
 ## Install
 
 ```bash
-npm install @softseco/confidential-transfers
+npm install @softseco/confidential-transfers @solana/kit
 ```
 
-In a Solana app you'll already have the peers this builds on: `@solana/kit` and
-`@solana-program/token-2022`.
+`@solana/kit` (v8) is a peer dependency, so your app and the SDK share one copy and the types line
+up.
 
 ## Usage
 
@@ -55,6 +74,7 @@ import {
   applyPendingBalance,
   decryptBalance,
   transfer,
+  withdraw,
 } from "@softseco/confidential-transfers";
 
 // 1. enable Alice's account for confidential transfers
@@ -69,7 +89,7 @@ await applyPendingBalance({ rpc, rpcSubscriptions, payer, owner: alice, mint });
 // 4. read your own balance (decrypted locally; nothing is revealed on-chain)
 const balance = await decryptBalance({ rpc, owner: alice, mint }); // 1000n
 
-// 5. privately transfer 1000 to Bob
+// 5. privately transfer 600 to Bob
 await transfer({
   rpc,
   rpcSubscriptions,
@@ -77,23 +97,34 @@ await transfer({
   owner: alice,
   mint,
   destinationOwner: bob.address,
-  amount: 1000n,
+  amount: 600n,
 });
+
+// 6. move 400 of Alice's confidential balance back to her public balance
+await withdraw({ rpc, rpcSubscriptions, payer, owner: alice, mint, amount: 400n, decimals });
 ```
 
-A full, runnable round trip lives in
-[`examples/confidential-transfer.ts`](./examples/confidential-transfer.ts):
+Only the available balance can be transferred or withdrawn, so call `applyPendingBalance` after
+receiving funds. A withdrawn amount is public (it is an instruction argument); the balance that
+remains stays encrypted.
 
-```bash
-# with a local validator running (see Local development):
-npm run example
-```
+Runnable round trips: [`examples/devnet.ts`](./examples/devnet.ts) (`npm run example:devnet`) and
+[`examples/confidential-transfer.ts`](./examples/confidential-transfer.ts) (`npm run example`,
+against a local validator, see [Local development](#local-development)).
+
+### Transfer hooks
+
+Token-2022 calls a mint's transfer hook on confidential transfers too, with the amount set to
+`u64::MAX` because the real amount is encrypted. `transfer` reads the mint's
+`ExtraAccountMetaList` and appends the accounts the hook needs, so no extra code is required.
+`resolveTransferHookAccounts`, `getTransferHookProgram` and `findExtraAccountMetaListPda` are
+exported for callers that build their own instructions.
 
 ### Auditor selective disclosure
 
 A mint can designate an **auditor** ElGamal public key. Once set, every confidential transfer on
-that mint additionally encrypts the amount to the auditor, who — and only who — can recover it,
-without being able to spend and without weakening anyone else's confidentiality.
+that mint also encrypts the amount to the auditor, who can recover it without being able to spend
+and without weakening anyone else's confidentiality.
 
 ```ts
 import {
@@ -124,40 +155,47 @@ const amount = await decryptTransferAmountAsAuditor({ rpc, signature, auditorKey
 | `applyPendingBalance` | Pending → available | `rpc`, `rpcSubscriptions`, `payer`, `owner`, `mint` → `{ token, signature }` |
 | `decryptBalance` | Decrypt your available balance (read-only) | `rpc`, `owner`, `mint` → `bigint` |
 | `transfer` | Private transfer between accounts | `…`, `owner`, `mint`, `destinationOwner` (or `destinationToken`), `amount`, optional `auditorElgamalPubkey` → `{ sourceToken, destinationToken, signatures }` |
+| `withdraw` | Confidential available → public balance | `…`, `owner`, `mint`, `amount`, `decimals` → `{ token, signatures }` |
 | `deriveAuditorElgamalKeypair` | Derive the auditor's ElGamal keypair from its wallet | `signer` → `ElGamalKeypair` |
 | `getAuditorElgamalPubkey` | Auditor pubkey for a mint's CT config | `auditorKeypair` → `Address` |
 | `decryptTransferAmountAsAuditor` | Recover a transfer's amount as the auditor | `rpc`, `signature`, `auditorKeypair` → `bigint` |
+| `resolveTransferHookAccounts` | Accounts a mint's transfer hook needs | `rpc`, `mint`, `sourceToken`, `destinationToken`, `owner` → `ResolvedAccount[]` |
 | `deriveConfidentialKeys` | The wallet's standard ElGamal + AES keys, from one signature | `signer` → `{ elgamalKeypair, aesKey }` |
 | `deriveConfidentialKeysWithSeed` | Seed-scoped, non-standard derivation | `signer`, `publicSeed` → `{ elgamalKeypair, aesKey }` |
 | `pdaWalletPublicSeed` | Canonical seed for single-signer PDA wallets | `programId`, `walletPda`, `mint`, `tokenAccount` → `Uint8Array` |
 
 Every function accepts an optional `programAddress` (defaults to Token-2022) and derives the
-owner's ElGamal/AES keys from the `owner` signer — no key storage required.
+owner's ElGamal/AES keys from the `owner` signer, so no key storage is required.
 
-> **Upgrading from 1.x.** Key derivation changed to the ecosystem standard, so 1.x keys and 2.x
-> keys differ. An account configured by 1.x must have its balance applied and withdrawn with 1.x
-> before being re-configured with 2.x.
+> **Upgrading from 2.x.** Move your app to `@solana/kit` 8. Function signatures and key
+> derivation are unchanged, so accounts configured with 2.x keep working.
+>
+> **Upgrading from 1.x.** Key derivation changed in 2.0 to the ecosystem standard, so 1.x keys and
+> later keys differ. Move the balance of a 1.x account out with a 1.x `transfer` to an account
+> configured with the current version.
 
 ## Rust
 
-The same helpers — the five core operations plus the auditor utilities — are published as a Rust
-crate, [`softseco-confidential-transfers`](https://crates.io/crates/softseco-confidential-transfers):
+The core helpers (configure, deposit, apply, decrypt, transfer) and the auditor utilities are
+published as a Rust crate,
+[`softseco-confidential-transfers`](https://crates.io/crates/softseco-confidential-transfers)
+(2.0.0):
 
 ```bash
 cargo add softseco-confidential-transfers
 ```
 
 Built on [`solana-zk-sdk`](https://crates.io/crates/solana-zk-sdk) and
-[`spl-token-client`](https://crates.io/crates/spl-token-client). Like the TypeScript SDK, the crate's
-`transfer` verifies its ZK proofs via context-state accounts and is validated end-to-end against a
-local validator (`rust/tests/ct_integration.rs`). See [`rust/README.md`](./rust/README.md)
-for the crate API and details.
+[`spl-token-client`](https://crates.io/crates/spl-token-client), with the same key derivation as
+the TypeScript SDK. The crate does not have `withdraw` yet, and its `transfer` does not resolve
+transfer-hook accounts, so it fails on mints with a transfer hook. See
+[`rust/README.md`](./rust/README.md).
 
 ## Local development
 
 Confidential-transfer instructions require an on-chain Token-2022 program that **matches the
-client**, plus the ZK ElGamal Proof Program. The on-chain tests and the example therefore run
-against a local validator:
+client**, plus the ZK ElGamal Proof Program. The on-chain tests and the local example therefore
+run against a local validator:
 
 ```bash
 # 1. build a Token-2022 program matching the @solana-program/token-2022 client
@@ -172,26 +210,26 @@ CT_LOCAL_PROGRAM=1 npm test
 ```
 
 Without `CT_LOCAL_PROGRAM=1` the on-chain tests are skipped and only the validator-free unit
-tests run — this is what CI does. See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full workflow.
+tests run, which is what CI does. See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full workflow.
 
 ## Project status
 
-`v2.0.0` — the public API is stable. Both the TypeScript package and the Rust crate ship the five
-core operations plus auditor selective disclosure, each with CI, and `transfer` is validated
-end-to-end (TypeScript **and** Rust) against a local validator. Since 2.0.0 both halves derive keys
-through the ecosystem-standard `solana-conf-bal/v1` derivation, pinned by the same test vector in
-each language, so they are byte-identical to each other and to the Token-2022 clients. Changes are
-tracked in [CHANGELOG.md](./CHANGELOG.md).
+`v3.0.0`. The TypeScript package covers the full confidential-transfer lifecycle (configure,
+deposit, apply, transfer, withdraw, decrypt), transfer-hook mints and auditor selective
+disclosure, and runs end-to-end on devnet. Keys follow the ecosystem-standard
+`solana-conf-bal/v1` derivation, pinned by the same test vector in TypeScript and Rust. Changes
+are tracked in [CHANGELOG.md](./CHANGELOG.md).
 
 Planned next:
 
-- Broaden cluster coverage as the ZK ElGamal Proof Program rolls out beyond local validators
-- Additional worked examples (end-to-end auditor flow, multi-party transfers)
+- A browser build (loading the web build of `@solana/zk-sdk`)
+- `withdraw` and transfer-hook accounts in the Rust crate
+- An independent audit
 
 ## Security
 
 Confidential transfers are cryptographic and security-sensitive. To report a vulnerability, see
-[SECURITY.md](./SECURITY.md) — please do not open a public issue for security reports.
+[SECURITY.md](./SECURITY.md). Please do not open a public issue for security reports.
 
 ## License
 

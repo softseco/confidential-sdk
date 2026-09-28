@@ -97,3 +97,16 @@ export function subtractWithLoHiCiphertexts(
 ) {
   return subtractCiphertexts(left, combineLoHiCiphertexts(ciphertextLo, ciphertextHi, bitLength));
 }
+
+/**
+ * Subtracts a plaintext amount from an ElGamal ciphertext. The commitment moves by
+ * amount·G and the decryption handle stays the same. Used to compute the
+ * remaining available-balance ciphertext after a confidential withdraw.
+ */
+export function subtractAmountFromCiphertext(ciphertext: ReadonlyUint8Array, amount: bigint) {
+  if (amount <= 0n) {
+    throw new Error(`amount must be greater than zero, got ${amount}.`);
+  }
+  const { commitment, handle } = ciphertextToPoints(ciphertext);
+  return pointsToCiphertext(commitment.subtract(RistrettoPoint.BASE.multiply(amount)), handle);
+}

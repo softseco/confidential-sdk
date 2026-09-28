@@ -17,6 +17,10 @@ and [`solana-zk-sdk`](https://crates.io/crates/solana-zk-sdk).
 > `transfer`) against a local validator running that program plus a
 > client-matching Token-2022 build (`tests/ct_integration.rs`).
 
+> **Differences from the TypeScript SDK (3.x).** The crate has no `withdraw` yet, and its
+> `transfer` does not resolve transfer-hook accounts, so it fails on mints with a transfer hook.
+> Both are planned for the crate's next release.
+
 ## Install
 
 ```bash

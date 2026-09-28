@@ -4,22 +4,26 @@ This project implements cryptographic, security-sensitive functionality (ElGamal
 and zero-knowledge proofs for Token-2022 Confidential Transfers). We take security reports
 seriously and appreciate responsible disclosure.
 
-> **Note:** This SDK is validated against a local validator and depends on Solana's ZK ElGamal
-> Proof Program being available on the target cluster. Review the maturity notes in the
-> [README](./README.md) before relying on it beyond a local validator.
+> **Note:** This SDK runs end-to-end on devnet and against a local validator. It is self-audited,
+> not independently audited. It depends on Solana's ZK ElGamal Proof Program being enabled on the
+> target cluster. Review the status notes in the [README](./README.md) before relying on it on
+> mainnet-beta.
 
 ## Supported versions
 
-| Version | Supported |
-|---|---|
-| `2.x`   | ✅ |
-| `< 2.0` | ❌ |
+| Package | Version | Supported |
+|---|---|---|
+| `@softseco/confidential-transfers` (TypeScript) | `3.x` | ✅ |
+| `@softseco/confidential-transfers` (TypeScript) | `2.x` | ❌ (upgrade; the API is the same) |
+| `@softseco/confidential-transfers` (TypeScript) | `< 2.0` | ❌ |
+| `softseco-confidential-transfers` (Rust) | `2.0.x` | ✅ |
+| `softseco-confidential-transfers` (Rust) | `< 2.0` | ❌ |
 
-Security fixes land on the latest `2.x` release of both the TypeScript package and the Rust crate.
+Security fixes land on the latest release of each package.
 
 `2.0.0` changed key derivation to the ecosystem standard. Keys derived by `1.x` are different, so
-an account configured under `1.x` must have its confidential balance applied and withdrawn before
-upgrading — see [CHANGELOG.md](./CHANGELOG.md).
+the balance of an account configured under `1.x` has to be moved out with `1.x` before upgrading;
+see [CHANGELOG.md](./CHANGELOG.md).
 
 ## Reporting a vulnerability
 

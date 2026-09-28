@@ -4,13 +4,53 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-Versions apply to both the TypeScript package
+This repository holds the TypeScript package
 ([`@softseco/confidential-transfers`](https://www.npmjs.com/package/@softseco/confidential-transfers))
 and the Rust crate
-([`softseco-confidential-transfers`](https://crates.io/crates/softseco-confidential-transfers)),
-which are released together.
+([`softseco-confidential-transfers`](https://crates.io/crates/softseco-confidential-transfers)).
+Up to 2.0.0 they were released together under one version. Since 2.1.0 the TypeScript package is
+versioned on its own, and the Rust crate stays at 2.0.0 until it changes.
 
-## [2.1.0]
+## [Unreleased]
+
+_Nothing yet._
+
+## [3.0.0] - 2026-09-28
+
+### Changed
+
+- **BREAKING: built on `@solana/kit` 8** (was 6), with `@solana-program/token-2022` 0.19,
+  `@solana-program/zk-elgamal-proof` 0.4, `@solana-program/system` 0.15 and `@solana/sysvars` 8.
+- **`@solana/kit` is now a peer dependency** (`^8.3.0`). With kit as a regular dependency, an app
+  on kit 8 got a second, nested copy of kit 6, and every call failed type-checking because the
+  app's `Rpc` and `RpcSubscriptions` were not assignable to the SDK's. Now the app and the SDK
+  share one copy.
+- A clean `npm install` no longer prints peer-dependency warnings, and the repository no longer
+  needs `legacy-peer-deps` (`.npmrc` removed).
+- Requires Node ≥ 20.18 (the minimum for `@solana/kit` 8).
+
+### Added
+
+- `withdraw()` moves tokens from the confidential available balance back to the public balance.
+  It generates the ciphertext-commitment equality proof and a U64 range proof on the remaining
+  balance, verifies both into context-state accounts, runs the withdraw and closes the proof
+  accounts. Run end-to-end on devnet.
+- `examples/devnet.ts` now includes a withdraw step and runs with `npm run example:devnet`. The
+  README explains how to try the SDK on devnet in a few commands.
+- `npm run typecheck` also type-checks the examples, so they cannot drift from the API unnoticed.
+- Package keywords, homepage and issue tracker in `package.json`.
+
+### Migration from 2.x
+
+Move your app to `@solana/kit` 8. Function signatures and key derivation are unchanged, so
+accounts configured with 2.x keep working.
+
+### Notes
+
+- The Rust crate is unchanged at 2.0.0. It has no `withdraw`, and its `transfer` does not resolve
+  transfer-hook accounts.
+
+## [2.1.0] - 2026-09-23
 
 ### Added
 
@@ -24,10 +64,6 @@ which are released together.
 ### Notes
 
 - The Rust crate is unchanged at 2.0.0.
-
-## [Unreleased]
-
-_Nothing yet._
 
 ## [2.0.0] - 2026-09-19
 
@@ -73,10 +109,10 @@ _Nothing yet._
   `deriveAeKey` remain but no longer take a `publicSeed`.
 
 ### Migration
-Keys derived by 1.x and 2.0 are different. Before upgrading, apply the pending balance and
-withdraw the confidential balance of any account configured with 1.x; then re-configure it with
-2.0. There is no in-place migration, because the on-chain account stores the ElGamal public key
-that the old derivation produced.
+Keys derived by 1.x and 2.0 are different. There is no in-place migration, because the on-chain
+account stores the ElGamal public key that the old derivation produced. Apply the pending balance
+of a 1.x account and move its available balance out with a 1.x `transfer` to an account
+configured with 2.0. (Neither 1.x nor 2.0 had a `withdraw`; it arrived in 3.0.0.)
 
 ## [1.0.1] - 2026-07-14
 
@@ -126,6 +162,9 @@ to that surface under semantic versioning.
 - Local-validator integration tests (gated behind `CT_LOCAL_PROGRAM=1`) and validator-free unit
   tests in CI. Published to npm.
 
+[Unreleased]: https://github.com/softseco/confidential-sdk/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/softseco/confidential-sdk/releases/tag/v3.0.0
+[2.1.0]: https://github.com/softseco/confidential-sdk/releases/tag/v2.1.0
 [2.0.0]: https://github.com/softseco/confidential-sdk/releases/tag/v2.0.0
 [1.0.1]: https://github.com/softseco/confidential-sdk/releases/tag/v1.0.1
 [1.0.0]: https://github.com/softseco/confidential-sdk/releases/tag/v1.0.0

@@ -1,14 +1,14 @@
 # Contributing
 
 Thanks for your interest in improving the Confidential Transfers SDK. This repository holds two
-packages that are released together:
+packages, versioned separately since 2.1.0:
 
 - **TypeScript** (repository root) — `@softseco/confidential-transfers`
 - **Rust** (`rust/`) — `softseco-confidential-transfers`
 
 ## Prerequisites
 
-- **Node ≥ 20** and npm (for the TypeScript package)
+- **Node ≥ 20.18** and npm (for the TypeScript package)
 - **Rust** (stable) with `rustfmt` and `clippy` (for the crate)
 - For on-chain tests: the Solana CLI/`solana-test-validator`, a client-matching Token-2022 build,
   and the ZK ElGamal Proof Program (see [Local development](#on-chain-tests))
@@ -17,10 +17,11 @@ packages that are released together:
 
 ```bash
 npm install
-npm run typecheck     # tsc --noEmit
-npm run build         # tsup + type declarations
-npm test              # validator-free unit tests (what CI runs)
-npm run coverage      # unit tests with coverage
+npm run typecheck        # tsc --noEmit, for src/ and examples/
+npm run build            # tsup + type declarations
+npm test                 # validator-free unit tests (what CI runs)
+npm run coverage         # unit tests with coverage
+npm run example:devnet   # full round trip on devnet, paid from your Solana CLI wallet
 ```
 
 ### On-chain tests
@@ -59,8 +60,9 @@ Keep `Cargo.lock` committed and in sync when changing dependencies.
 ## Pull requests
 
 - Open an issue first for anything larger than a small fix, so we can align on the approach.
-- Keep the two packages in parity: a change to a helper's behavior should land in both TS and Rust,
-  or explain why not.
+- Keep the two packages in parity where possible: a change to a helper's behavior should land in
+  both TS and Rust, or explain why not. Known gaps today: the Rust crate has no `withdraw` and does
+  not resolve transfer-hook accounts.
 - Before pushing: unit tests pass, `tsc` is clean, and (for Rust) `fmt`/`clippy` are clean. CI runs
   all of these.
 - Update [CHANGELOG.md](./CHANGELOG.md) under an `Unreleased` heading, and the docs if you change
