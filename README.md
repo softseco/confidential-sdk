@@ -131,6 +131,7 @@ import {
   deriveAuditorElgamalKeypair,
   getAuditorElgamalPubkey,
   decryptTransferAmountAsAuditor,
+  transfer,
 } from "@softseco/confidential-transfers";
 
 // The auditor derives its ElGamal identity from its own wallet (nothing stored):

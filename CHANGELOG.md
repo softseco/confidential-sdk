@@ -169,4 +169,4 @@ to that surface under semantic versioning.
 [1.0.1]: https://github.com/softseco/confidential-sdk/releases/tag/v1.0.1
 [1.0.0]: https://github.com/softseco/confidential-sdk/releases/tag/v1.0.0
 [0.2.0]: https://github.com/softseco/confidential-sdk/releases/tag/v0.2.0
-[0.1.0]: https://github.com/softseco/confidential-sdk/releases/tag/v0.1.0
+[0.1.0]: https://www.npmjs.com/package/@softseco/confidential-transfers/v/0.1.0
