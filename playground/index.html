@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Confidential Transfers SDK — playground</title>
+<meta name="description" content="Send a Solana Token-2022 confidential transfer from your browser: encrypted amounts, an auditor key, withdraw. Devnet, nothing to install.">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="icon" href="logo-mark.svg" type="image/svg+xml">
+<style>
+  :root {
+    --brand: #1315ff; --brand-lt: #8f91ff; --brand-soft: #e9eaff;
+    --ink: #0a0b0d; --ink2: #1a1d22; --ink3: #4a4f5a; --muted: #6b7280; --line: #e8eaed; --soft: #f5f6f8;
+    --ok: #00a86b; --ok-soft: #e6f6ef; --err: #c62828; --err-soft: #fdecec;
+    --font: Inter, "Helvetica Neue", Helvetica, Arial, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: #fff; color: var(--ink); font: 16px/1.55 var(--font); -webkit-font-smoothing: antialiased; }
+  a { color: var(--brand); }
+  code { font-family: var(--mono); font-size: .9em; background: var(--soft); padding: 1px 6px; border-radius: 6px; }
+
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px clamp(16px, 4vw, 40px); border-bottom: 1px solid var(--line); }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 19px; letter-spacing: -.02em; color: var(--ink); text-decoration: none; }
+  .brand img { height: 30px; }
+  .top nav { display: flex; gap: 18px; font-size: 14px; font-weight: 600; flex-wrap: wrap; justify-content: flex-end; }
+  .top nav a { color: var(--ink3); text-decoration: none; }
+  .top nav a:hover { color: var(--brand); }
+
+  .wrap { max-width: 1180px; margin: 0 auto; padding: clamp(24px, 5vw, 56px) clamp(16px, 4vw, 40px) 64px; }
+  .eyebrow { font-size: 12.5px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--brand); }
+  .hero h1 { font-size: clamp(32px, 5vw, 52px); line-height: 1.08; letter-spacing: -.03em; margin: 12px 0 16px; max-width: 20ch; text-wrap: balance; }
+  .hero p { font-size: clamp(17px, 2vw, 19px); color: var(--ink3); max-width: 62ch; margin: 0; }
+  .pills { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+  .pill { font-size: 12.5px; font-weight: 600; padding: 6px 12px; border-radius: 999px; background: var(--soft); color: var(--ink3); }
+  .pill.warn { background: #fff6e5; color: #9a5b00; }
+
+  #ready { margin-top: 24px; padding: 14px 18px; border-radius: 12px; background: var(--brand-soft); color: var(--ink2); font-weight: 600; }
+  #ready.err { background: var(--err-soft); color: var(--err); }
+
+  .grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 32px; margin-top: 40px; align-items: start; }
+  .steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 16px; }
+  .step { border: 1px solid var(--line); border-radius: 18px; padding: 22px 24px; background: #fff; transition: border-color .2s, box-shadow .2s, opacity .2s; }
+  .step[data-state="ready"] { border-color: var(--brand); box-shadow: 0 10px 30px rgba(19, 21, 255, .08); }
+  .step[data-state="locked"] { opacity: .55; }
+  .step .head { display: flex; align-items: center; gap: 14px; }
+  .step .num { width: 36px; height: 36px; border-radius: 50%; background: var(--soft); color: var(--ink3); display: grid; place-items: center; font-weight: 800; flex: none; }
+  .step[data-state="ready"] .num { background: var(--brand); color: #fff; }
+  .step[data-state="done"] .num { background: var(--ok); color: #fff; }
+  .step h2 { font-size: 20px; letter-spacing: -.01em; margin: 0; }
+  .step .lead { color: var(--ink3); margin: 10px 0 16px 50px; max-width: 60ch; }
+  .controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-left: 50px; }
+  .btn { font: 700 15px var(--font); border: 0; border-radius: 999px; padding: 12px 22px; background: var(--brand); color: #fff; cursor: pointer; transition: opacity .15s, transform .15s; }
+  .btn:hover:not(:disabled) { transform: translateY(-1px); }
+  .btn:disabled { opacity: .35; cursor: default; }
+  .btn.ghost { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+  .field { display: flex; align-items: center; gap: 8px; background: var(--soft); border-radius: 12px; padding: 0 14px; height: 46px; }
+  .field input { border: 0; background: transparent; font: 700 16px var(--font); width: 90px; outline: none; color: var(--ink); }
+  .field span { color: var(--muted); font-weight: 600; font-size: 14px; }
+  .status { margin: 12px 0 0 50px; font-size: 14.5px; color: var(--muted); min-height: 1em; overflow-wrap: anywhere; }
+  .status.ok { color: var(--ok); font-weight: 600; }
+  .status.err { color: var(--err); }
+  .out { margin-left: 50px; }
+  .out:empty { display: none; }
+  .out { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+  .kv { display: flex; gap: 12px; align-items: baseline; font-size: 15px; flex-wrap: wrap; }
+  .kv span { color: var(--muted); min-width: 110px; }
+  .kv em { font-style: normal; color: var(--muted); font-size: 13px; }
+  .note { margin: 4px 0; color: var(--ink3); font-size: 14.5px; }
+  .note.done { color: var(--ink); font-weight: 700; margin-top: 8px; }
+  .links { margin: 0; padding-left: 18px; font-size: 14.5px; }
+  .who { display: flex; gap: 12px; align-items: baseline; padding: 10px 14px; border-radius: 12px; font-size: 15px; flex-wrap: wrap; }
+  .who b { min-width: 110px; }
+  .who.ok { background: var(--ok-soft); }
+  .who.no { background: var(--soft); color: var(--ink3); }
+  details.code { margin: 14px 0 0 50px; }
+  details.code summary { cursor: pointer; font-size: 13.5px; font-weight: 600; color: var(--muted); }
+  details.code pre { margin: 10px 0 0; padding: 14px 16px; background: var(--ink); color: #e6e8ee; border-radius: 12px; overflow-x: auto; font: 13px/1.55 var(--mono); }
+
+  .side { position: sticky; top: 20px; display: flex; flex-direction: column; gap: 16px; }
+  .card { border-radius: 18px; background: var(--soft); padding: 22px 22px; }
+  .card h3 { margin: 8px 0 14px; font-size: 17px; }
+  .row { display: flex; justify-content: space-between; gap: 10px; font-size: 14.5px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .row:last-of-type { border-bottom: 0; }
+  .row span { color: var(--muted); }
+  .row a, .row b { font-family: var(--mono); font-size: 13.5px; font-weight: 500; color: var(--ink); text-decoration: none; }
+  .row a:hover { color: var(--brand); }
+  .bal { width: 100%; border-collapse: collapse; font-size: 14.5px; margin-top: 4px; }
+  .bal th { text-align: right; font-size: 12px; color: var(--muted); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; padding: 4px 0; }
+  .bal th:first-child, .bal td:first-child { text-align: left; }
+  .bal td { text-align: right; padding: 6px 0; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; font-weight: 600; }
+  .bal td:first-child { font-weight: 500; color: var(--ink3); }
+  .side .btn { width: 100%; margin-top: 14px; }
+  .fine { font-size: 12.5px; color: var(--muted); margin: 12px 0 0; }
+  .dark { background: var(--ink); color: #fff; }
+  .dark .eyebrow { color: var(--brand-lt); }
+  .dark p { color: #c9ced9; font-size: 14.5px; margin: 8px 0 0; }
+  .dark code { background: #1b1d52; color: #fff; display: block; padding: 10px 12px; margin-top: 12px; font-size: 12.5px; white-space: pre; overflow-x: auto; }
+  .dark a { color: #fff; font-weight: 700; }
+
+  #finale { margin-top: 24px; border-radius: 18px; background: var(--brand); color: #fff; padding: 26px 28px; }
+  #finale h2 { margin: 6px 0 8px; font-size: 24px; }
+  #finale p { margin: 0 0 14px; color: #dcdcff; }
+  #finale code { background: rgba(255, 255, 255, .15); color: #fff; }
+  #finale a { color: #fff; font-weight: 700; }
+
+  footer { border-top: 1px solid var(--line); padding: 24px clamp(16px, 4vw, 40px); font-size: 13.5px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 8px 20px; justify-content: space-between; }
+  footer a { color: var(--ink3); }
+
+  @media (max-width: 900px) {
+    .grid { grid-template-columns: 1fr; }
+    .side { position: static; order: -1; }
+    .side .dark { display: none; }
+  }
+  @media (max-width: 560px) {
+    .step { padding: 18px 16px; }
+    .step .lead, .controls, .status, .out, details.code { margin-left: 0; }
+    .top nav { display: none; }
+  }
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="https://softseco.com"><img src="logo-mark.svg" alt=""><span>softseco</span></a>
+  <nav>
+    <a href="https://github.com/softseco/confidential-sdk">SDK on GitHub</a>
+    <a href="https://www.npmjs.com/package/@softseco/confidential-transfers">npm</a>
+    <a href="https://softseco.com/devnet">PAPER on devnet</a>
+  </nav>
+</header>
+
+<main class="wrap">
+  <section class="hero">
+    <div class="eyebrow">Confidential Transfers SDK · Playground</div>
+    <h1>Send a payment nobody else can read.</h1>
+    <p>Solana Token-2022 confidential transfers, run by <code>@softseco/confidential-transfers</code> inside this page. Nothing to install and no wallet extension: the page makes throwaway devnet keys and keeps them in this browser.</p>
+    <div class="pills"><span class="pill warn">Solana devnet · test tokens with no value</span><span class="pill">RPC: <span id="rpc">api.devnet.solana.com</span></span><span class="pill">Open source · Apache-2.0</span></div>
+    <div id="ready">Loading the zero-knowledge module…</div>
+  </section>
+
+  <div class="grid">
+    <ol class="steps">
+      <li class="step" data-step="1" data-state="ready">
+        <div class="head"><span class="num">1</span><h2>Get devnet SOL</h2></div>
+        <p class="lead">Your throwaway wallet pays fees and rent — about 0.05 SOL for the whole run. Devnet SOL is free and worth nothing.</p>
+        <div class="controls"><button class="btn" data-run="1" disabled>Airdrop 1 SOL</button><button class="btn ghost" id="copy" type="button">Copy address</button></div>
+        <div class="status" aria-live="polite"></div>
+        <div class="out"></div>
+        <details class="code"><summary>The call</summary><pre><code>await rpc.requestAirdrop(you.address, lamports(1_000_000_000n)).send();
+// If the faucet refuses, send devnet SOL from faucet.solana.com to the address on the right.</code></pre></details>
+      </li>
+
+      <li class="step" data-step="2" data-state="locked">
+        <div class="head"><span class="num">2</span><h2>Create a confidential test dollar</h2></div>
+        <p class="lead">A Token-2022 mint with the confidential-transfer extension and a designated auditor key. You hold the mint authority, so you give yourself 1,000 public test dollars.</p>
+        <div class="controls"><button class="btn" data-run="2" disabled>Create the token</button></div>
+        <div class="status" aria-live="polite"></div>
+        <div class="out"></div>
+        <details class="code"><summary>The SDK call</summary><pre><code>// the mint carries ConfidentialTransferMint { auditorElgamalPubkey }
+const auditorKeypair = await deriveAuditorElgamalKeypair(auditor);
+const auditorElgamalPubkey = getAuditorElgamalPubkey(auditorKeypair);
+
+// then your token account is configured for confidential transfers
+await configureAccount({ rpc, rpcSubscriptions, payer: you, owner: you, mint });</code></pre></details>
+      </li>
+
+      <li class="step" data-step="3" data-state="locked">
+        <div class="head"><span class="num">3</span><h2>Move 100 into your confidential balance</h2></div>
+        <p class="lead">A deposit moves public tokens into a pending confidential balance; applying it makes them spendable. From here on the chain holds only ciphertext for your confidential balance.</p>
+        <div class="controls"><button class="btn" data-run="3" disabled>Deposit 100</button></div>
+        <div class="status" aria-live="polite"></div>
+        <div class="out"></div>
+        <details class="code"><summary>The SDK call</summary><pre><code>await deposit({ rpc, rpcSubscriptions, payer: you, owner: you, mint,
+                amount: 100_000_000n, decimals: 6 });
+await applyPendingBalance({ rpc, rpcSubscriptions, payer: you, owner: you, mint });</code></pre></details>
+      </li>
+
+      <li class="step" data-step="4" data-state="locked">
+        <div class="head"><span class="num">4</span><h2>Send a confidential transfer</h2></div>
+        <p class="lead">The amount is encrypted three times — to you, to Bob and to the auditor — and zero-knowledge proofs show it is valid without revealing it. Bob needs no SOL: you pay the fees.</p>
+        <div class="controls"><label class="field"><input id="amount" type="number" min="0.01" step="0.01" value="25" aria-label="Amount to send"><span>to Bob</span></label><button class="btn" data-run="4" disabled>Send</button></div>
+        <div class="status" aria-live="polite"></div>
+        <div class="out"></div>
+        <details class="code"><summary>The SDK call</summary><pre><code>const { signatures } = await transfer({
+  rpc, rpcSubscriptions, payer: you, owner: you, mint,
+  destinationOwner: bob.address,
+  amount: 25_000_000n,
+  auditorElgamalPubkey,
+});</code></pre></details>
+      </li>
+
+      <li class="step" data-step="5" data-state="locked">
+        <div class="head"><span class="num">5</span><h2>See who can read it</h2></div>
+        <p class="lead">Three keys can open the amount. Everyone else sees the addresses and a ciphertext.</p>
+        <div class="controls"><button class="btn" data-run="5" disabled>Decrypt</button></div>
+        <div class="status" aria-live="polite"></div>
+        <div class="out"></div>
+        <details class="code"><summary>The SDK call</summary><pre><code>await decryptBalance({ rpc, owner: you, mint });              // you
+await decryptBalance({ rpc, owner: bob, mint });              // Bob
+await decryptTransferAmountAsAuditor({ rpc, signature, auditorKeypair }); // the auditor</code></pre></details>
+      </li>
+
+      <li class="step" data-step="6" data-state="locked">
+        <div class="head"><span class="num">6</span><h2>Withdraw back to public</h2></div>
+        <p class="lead">Bob moves what he received from his confidential balance to his public balance, proving he has enough without showing how much he had.</p>
+        <div class="controls"><button class="btn" data-run="6" disabled>Withdraw</button></div>
+        <div class="status" aria-live="polite"></div>
+        <div class="out"></div>
+        <details class="code"><summary>The SDK call</summary><pre><code>await withdraw({ rpc, rpcSubscriptions, payer: you, owner: bob, mint,
+                 amount: 25_000_000n, decimals: 6 });</code></pre></details>
+      </li>
+    </ol>
+
+    <aside class="side">
+      <div class="card">
+        <div class="eyebrow">Keys in this browser</div>
+        <h3>Throwaway devnet wallets</h3>
+        <div class="row"><span>You</span><a id="addr-you" target="_blank" rel="noopener">…</a></div>
+        <div class="row"><span>Bob</span><a id="addr-bob" target="_blank" rel="noopener">…</a></div>
+        <div class="row"><span>Auditor</span><a id="addr-auditor" target="_blank" rel="noopener">…</a></div>
+        <div class="row"><span>Your SOL</span><b id="sol">—</b></div>
+        <table class="bal">
+          <thead><tr><th></th><th>Public</th><th>Confidential</th></tr></thead>
+          <tbody>
+            <tr><td>You</td><td id="you-pub">—</td><td id="you-conf">—</td></tr>
+            <tr><td>Bob</td><td id="bob-pub">—</td><td id="bob-conf">—</td></tr>
+          </tbody>
+        </table>
+        <button class="btn ghost" id="restart" type="button">Start over with new keys</button>
+        <p class="fine">Keys live only in this browser's storage. Devnet only — never send real funds to these addresses.</p>
+      </div>
+      <div class="card dark">
+        <div class="eyebrow">In your app</div>
+        <p>The same calls, from Node, in a few lines.</p>
+        <code>npm install \
+  @softseco/confidential-transfers \
+  @solana/kit</code>
+        <p><a href="https://github.com/softseco/confidential-sdk#readme">Read the README</a></p>
+      </div>
+    </aside>
+  </div>
+
+  <section id="finale" hidden>
+    <div class="eyebrow" style="color:#dcdcff">Done</div>
+    <h2>That was a private payment on a public chain.</h2>
+    <p>Configure, deposit, apply, transfer, decrypt, withdraw — every step a real devnet transaction. The same SDK powers <a href="https://softseco.com/devnet">PAPER on devnet</a>, where identity is checked at mint and redeem and a compliance hook screens every transfer.</p>
+    <p>Building payments, payroll or treasury on Solana? Tell us what broke: <a href="https://github.com/softseco/confidential-sdk/issues">open an issue</a> or write to hello@softseco.com.</p>
+  </section>
+</main>
+
+<footer>
+  <span>Softseco · <a href="https://github.com/softseco/confidential-sdk">@softseco/confidential-transfers</a> · Apache-2.0 · self-audited, not independently audited</span>
+  <span>Solana devnet only. Test tokens with no value.</span>
+</footer>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

@@ -16,10 +16,17 @@ A Rust crate with the core helpers lives in [`rust/`](#rust).
 > **Status: `v3.0.0`.** Built on `@solana/kit` 8. The whole flow (configure, deposit, apply,
 > transfer, withdraw) runs end-to-end on **devnet** and against a local validator. The SDK is
 > self-audited, not independently audited. It runs on **Node ≥ 20.18** (servers, scripts,
-> backends). It does not run in the browser yet, because it loads the Node build of
-> `@solana/zk-sdk`. Confidential transfers depend on Solana's ZK ElGamal Proof Program: check that
+> backends). In a browser it needs one
+> bundler alias (`@solana/zk-sdk/node` to its web build); the [playground](./playground)
+> shows how. Confidential transfers depend on Solana's ZK ElGamal Proof Program: check that
 > it is enabled on your target cluster (it is on devnet). Upgrading from 2.x means moving your app
 > to `@solana/kit` 8; see [CHANGELOG.md](./CHANGELOG.md).
+
+## Try it in your browser
+
+**[softseco.github.io/confidential-sdk](https://softseco.github.io/confidential-sdk/)** runs the whole flow on devnet in a browser
+tab: throwaway keys, a confidential mint with an auditor, deposit, transfer, decrypt as each
+party, withdraw. Nothing to install. The source is in [`playground/`](./playground).
 
 ## Try it on devnet
 
