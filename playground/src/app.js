@@ -54,18 +54,20 @@ import { createPollingSubscriptions } from "./polling.js";
 const DECIMALS = 6;
 const UNIT = 10n ** BigInt(DECIMALS);
 const STORE = "softseco-ct-playground-v1";
-const MIN_SOL = 50_000_000n; // 0.05 SOL covers every step with room to spare
+const MIN_SOL = 30_000_000n; // a full run costs about 0.01 SOL; proof accounts hold a little more for a moment
 
 const params = new URLSearchParams(location.search);
 const customRpc = params.get("rpc");
 const RPC_URL = customRpc && /^https:\/\//.test(customRpc) ? customRpc : "https://api.devnet.solana.com";
 
 // The public endpoint answers 429 when it is busy; wait the way it asks instead of failing.
+// Not for airdrops: there 429 means the daily faucet limit, and waiting does not help.
 const realFetch = window.fetch.bind(window);
 window.fetch = async (input, init) => {
+  const airdrop = typeof init?.body === "string" && init.body.includes('"requestAirdrop"');
   for (let attempt = 0; ; attempt++) {
     const res = await realFetch(input, init);
-    if (res.status !== 429 || attempt >= 6) return res;
+    if (res.status !== 429 || airdrop || attempt >= 6) return res;
     const wait = (Number(res.headers.get("retry-after") ?? 2) + attempt) * 1000;
     await new Promise((r) => setTimeout(r, wait));
   }
@@ -287,7 +289,7 @@ const STEPS = {
     await applyPendingBalance({ ...sdk, payer: keys.you, owner: keys.bob, mint: address(state.mint) });
     out(4, `
       <p class="note">Open any of these in the explorer. You will find the sender, the recipient and the proofs — and no amount.</p>
-      <ul class="links">${state.signatures.map((s, i) => `<li><a href="${tx(s)}" target="_blank" rel="noopener">transaction ${i + 1} of ${state.signatures.length}</a></li>`).join("")}</ul>`);
+      <ul class="links">${state.signatures.map((s, i, all) => `<li><a href="${tx(s)}" target="_blank" rel="noopener">${i === all.length - 1 ? "the transfer itself" : `proof step ${i + 1} of ${all.length - 1}`}</a></li>`).join("")}</ul>`);
   },
 
   5: async () => {
