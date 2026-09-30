@@ -56,8 +56,7 @@
   .step h2 { font-size: 20px; letter-spacing: -.01em; margin: 0; }
   .step .lead { color: var(--ink3); margin: 10px 0 16px 50px; max-width: 60ch; }
   .controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-left: 50px; }
-  .btn { font: 700 15px var(--font); border: 0; border-radius: 999px; padding: 12px 22px; background: var(--brand); color: #fff; cursor: pointer; transition: opacity .15s, transform .15s; }
-  .btn:hover:not(:disabled) { transform: translateY(-1px); }
+  .btn { font: 700 15px var(--font); border: 0; border-radius: 999px; padding: 12px 22px; background: var(--brand); color: #fff; cursor: pointer; transition: opacity .15s; }
   .btn:disabled { opacity: .35; cursor: default; }
   .btn.ghost { background: #fff; color: var(--ink); border: 1px solid var(--line); }
   .field { display: flex; align-items: center; gap: 8px; background: var(--soft); border-radius: 12px; padding: 0 14px; height: 46px; }
@@ -98,6 +97,9 @@
   .bal td:first-child { font-weight: 500; color: var(--ink3); }
   .side .btn { width: 100%; margin-top: 14px; }
   .fine { font-size: 12.5px; color: var(--muted); margin: 12px 0 0; }
+  .link { background: none; border: 0; padding: 0; font: inherit; color: var(--brand); text-decoration: underline; cursor: pointer; }
+  .link:disabled { opacity: .4; cursor: default; }
+  .btn.light { background: #fff; color: var(--brand); }
   .dark { background: var(--ink); color: #fff; }
   .dark .eyebrow { color: var(--brand-lt); }
   .dark p { color: #c9ced9; font-size: 14.5px; margin: 8px 0 0; }
@@ -240,7 +242,8 @@ await decryptTransferAmountAsAuditor({ rpc, signature, auditorKeypair }); // the
             <tr><td>Bob</td><td id="bob-pub">—</td><td id="bob-conf">—</td></tr>
           </tbody>
         </table>
-        <button class="btn ghost" id="restart" type="button">Start over with new keys</button>
+        <button class="btn ghost" id="reset" type="button">Reset simulation</button>
+        <p class="fine">Runs the steps again with a new token, Bob and auditor. Your wallet and its SOL stay. <button class="link" id="restart" type="button">Use new keys instead</button></p>
         <p class="fine">Keys live only in this browser's storage. Devnet only — never send real funds to these addresses.</p>
       </div>
       <div class="card dark">
@@ -259,6 +262,7 @@ await decryptTransferAmountAsAuditor({ rpc, signature, auditorKeypair }); // the
     <h2>That was a private payment on a public chain.</h2>
     <p>Configure, deposit, apply, transfer, decrypt, withdraw — every step a real devnet transaction. The same SDK powers <a href="https://softseco.com/devnet">PAPER on devnet</a>, where identity is checked at mint and redeem and a compliance hook screens every transfer.</p>
     <p>Building payments, payroll or treasury on Solana? Tell us what broke: <a href="https://github.com/softseco/confidential-sdk/issues">open an issue</a> or write to hello@softseco.com.</p>
+    <button class="btn light" id="again" type="button">Run it again</button>
   </section>
 </main>
 

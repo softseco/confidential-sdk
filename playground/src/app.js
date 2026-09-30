@@ -343,7 +343,9 @@ function paint() {
     const button = $("button[data-run]", el);
     if (button) button.disabled = busy || n !== state.done + 1;
   }
+  $("#reset").disabled = busy;
   $("#restart").disabled = busy;
+  $("#again").disabled = busy;
   $("#finale").hidden = state.done < 6;
 }
 
@@ -446,16 +448,35 @@ async function watchFunding() {
   }
 }
 
+function reloadAtTop() {
+  history.scrollRestoration = "manual";
+  window.scrollTo(0, 0);
+  location.reload();
+}
+
+// Run the steps again with the same funded wallet: a new token, a new Bob and a new auditor.
+function resetSimulation() {
+  if (busy) return;
+  const you = state.seeds.you;
+  state = fresh();
+  state.seeds.you = you;
+  save();
+  reloadAtTop();
+}
+
+// Throw every key away, including the funded wallet.
 function restart() {
   if (busy) return;
   state = fresh();
   save();
-  location.reload();
+  reloadAtTop();
 }
 
 async function main() {
   $("#rpc").textContent = new URL(RPC_URL).host;
   $$("button[data-run]").forEach((b) => b.addEventListener("click", () => run(Number(b.dataset.run))));
+  $("#reset").addEventListener("click", resetSimulation);
+  $("#again").addEventListener("click", resetSimulation);
   $("#restart").addEventListener("click", restart);
   $("#copy").addEventListener("click", async () => {
     try {
