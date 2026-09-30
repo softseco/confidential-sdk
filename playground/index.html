@@ -116,8 +116,9 @@
   footer a { color: var(--ink3); }
 
   @media (max-width: 900px) {
-    .grid { grid-template-columns: minmax(0, 1fr); }
-    .side { position: static; order: -1; }
+    .grid { grid-template-columns: minmax(0, 1fr); gap: 20px; margin-top: 28px; }
+    /* one column: the steps come first, the keys and balances follow them */
+    .side { position: static; }
     .side .dark { display: none; }
   }
   @media (max-width: 980px) {
@@ -130,8 +131,29 @@
     .nav-link.npm { display: none; }
   }
   @media (max-width: 560px) {
-    .step { padding: 18px 16px; }
+    .hero p { font-size: 16px; }
+    .pills { gap: 6px; }
+    .pill { font-size: 12px; padding: 5px 10px; }
+    #ready { margin-top: 18px; padding: 12px 14px; font-size: 14.5px; }
+    .steps { gap: 12px; }
+    .step { padding: 18px 16px; border-radius: 16px; }
+    .step h2 { font-size: 18px; }
+    .step .num { width: 32px; height: 32px; font-size: 15px; }
+    .step .head { gap: 12px; }
+    .step .lead { margin: 10px 0 14px; font-size: 15px; }
     .step .lead, .controls, .status, .out, details.code { margin-left: 0; }
+    .controls { gap: 10px; }
+    .controls .btn { flex: 1 1 auto; }
+    .field { flex: 1 1 140px; }
+    .kv span, .who b { min-width: 104px; }
+    details.code pre { font-size: 12px; padding: 12px 14px; }
+    .card { padding: 20px 18px; }
+    #finale { padding: 22px 20px; }
+    #finale h2 { font-size: 21px; }
+  }
+  @media (max-width: 360px) {
+    .nav-link { padding: 6px 8px; font-size: 13px; }
+    .brand svg { height: 30px; }
   }
 </style>
 </head>
