@@ -40,6 +40,7 @@ await build({
 await copyFile(path.join(here, "node_modules/@solana/zk-sdk/dist/web/index_bg.wasm"), path.join(out, "zk_sdk_bg.wasm"));
 await copyFile(path.join(here, "index.html"), path.join(out, "index.html"));
 await copyFile(path.join(here, "logo-mark.svg"), path.join(out, "logo-mark.svg"));
+await copyFile(path.join(here, "og.png"), path.join(out, "og.png"));
 await writeFile(path.join(out, ".nojekyll"), "");
 
 console.log(`built ${path.relative(process.cwd(), out) || "."}`);
