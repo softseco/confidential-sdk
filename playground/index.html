@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Confidential Transfers SDK — playground</title>
-<meta name="description" content="Send a Solana Token-2022 confidential transfer from your browser: encrypted amounts, an auditor key, withdraw. Devnet, nothing to install.">
+<meta name="description" content="Send a Solana Token-2022 confidential transfer from your browser: encrypted amounts, an auditor key, withdraw, and a transfer hook that blocks a wallet. Devnet, nothing to install.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://softseco.github.io/confidential-sdk/">
 <meta property="og:title" content="Try confidential transfers in your browser">
-<meta property="og:description" content="Run the full Token-2022 confidential transfer flow on Solana devnet in about a minute: confidential mint with an auditor, deposit, transfer, decrypt, withdraw. Nothing to install.">
+<meta property="og:description" content="Run the full Token-2022 confidential transfer flow on Solana devnet: confidential mint with an auditor, deposit, transfer, decrypt, withdraw, then a compliance rule that refuses a blocked wallet. Nothing to install.">
 <meta property="og:image" content="https://softseco.github.io/confidential-sdk/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -69,7 +69,7 @@
   .btn.ghost { background: #fff; color: var(--ink); border: 1px solid var(--line); }
   .field { display: flex; align-items: center; gap: 8px; background: var(--soft); border-radius: 12px; padding: 0 14px; height: 46px; }
   .field input { border: 0; background: transparent; font: 700 16px var(--font); width: 90px; outline: none; color: var(--ink); }
-  .field span { color: var(--muted); font-weight: 600; font-size: 14px; }
+  .field span { color: var(--muted); font-weight: 600; font-size: 14px; white-space: nowrap; }
   .status { margin: 12px 0 0 50px; font-size: 14.5px; color: var(--muted); min-height: 1em; overflow-wrap: anywhere; }
   .status.ok { color: var(--ok); font-weight: 600; }
   .status.err { color: var(--err); }
@@ -86,6 +86,12 @@
   .who b { min-width: 110px; }
   .who.ok { background: var(--ok-soft); }
   .who.no { background: var(--soft); color: var(--ink3); }
+  .who.stop { background: var(--err-soft); }
+  .who.stop b { color: var(--err); }
+  .who code.log { flex-basis: 100%; display: block; font-size: 12.5px; white-space: normal; overflow-wrap: anywhere; background: rgba(255, 255, 255, .7); padding: 6px 10px; }
+  .part { padding: 20px 4px 0; }
+  .part h2 { font-size: 22px; line-height: 1.25; letter-spacing: -.01em; margin: 8px 0 0; text-wrap: balance; }
+  .part p { margin: 6px 0 0; color: var(--ink3); max-width: 62ch; }
   details.code { margin: 14px 0 0 50px; }
   details.code summary { cursor: pointer; font-size: 13.5px; font-weight: 600; color: var(--muted); }
   details.code pre { margin: 10px 0 0; padding: 14px 16px; background: var(--ink); color: #e6e8ee; border-radius: 12px; overflow-x: auto; font: 13px/1.55 var(--mono); }
@@ -188,7 +194,7 @@
     <ol class="steps">
       <li class="step" data-step="1" data-state="ready">
         <div class="head"><span class="num">1</span><h2>Get devnet SOL</h2></div>
-        <p class="lead">Your throwaway wallet pays fees and rent. The whole run costs about 0.01 SOL. Devnet SOL is free and worth nothing.</p>
+        <p class="lead">Your throwaway wallet pays fees and rent. The whole run costs about 0.03 SOL. Devnet SOL is free and worth nothing.</p>
         <div class="controls"><button class="btn" data-run="1" disabled>Airdrop 1 SOL</button><button class="btn ghost" id="copy" type="button">Copy address</button></div>
         <div class="status" aria-live="polite"></div>
         <div class="out"></div>
@@ -255,6 +261,43 @@ await decryptTransferAmountAsAuditor({ rpc, signature, auditorKeypair }); // the
         <details class="code"><summary>The SDK call</summary><pre><code>await withdraw({ rpc, rpcSubscriptions, payer: you, owner: bob, mint,
                  amount: 25_000_000n, decimals: 6 });</code></pre></details>
       </li>
+
+      <li class="part">
+        <div class="eyebrow">Part 2 · Rules</div>
+        <h2>Private amounts, rules still enforced</h2>
+        <p>The same transfer, on a token with Sentinel as its transfer hook. Token-2022 calls Sentinel on every transfer, confidential ones included, and Sentinel can refuse.</p>
+      </li>
+
+      <li class="step" data-step="7" data-state="locked">
+        <div class="head"><span class="num">7</span><h2>Put a compliance rule on a new token</h2></div>
+        <p class="lead">A second confidential test dollar with the same auditor, plus a transfer hook. Its policy turns the blocklist on, and a new wallet, Mallory, goes on the list. You get 100 of it in your confidential balance.</p>
+        <div class="controls"><button class="btn" data-run="7" disabled>Create the token with rules</button></div>
+        <div class="status" aria-live="polite"></div>
+        <div class="out"></div>
+        <details class="code"><summary>The calls</summary><pre><code>// the mint: TransferHook { programId: SENTINEL } + ConfidentialTransferMint { auditor }
+
+// the rules, with @softseco/sentinel from Node
+await sentinel.initializeExtraAccountMetaList(mint);
+await sentinel.initializePolicy({ mint, allowlist: false, blocklist: true, maxTransferAmount: 0 });
+await sentinel.addToBlocklist(mint, mallory.address);
+// this page sends the same three instructions, built with @solana/kit</code></pre></details>
+      </li>
+
+      <li class="step" data-step="8" data-state="locked">
+        <div class="head"><span class="num">8</span><h2>Pay Mallory, then Bob</h2></div>
+        <p class="lead">Sentinel cannot see the amount, but it can see who gets paid. The payment to Mallory is refused by the chain. The same payment to Bob goes through, still encrypted, and the auditor can still read it.</p>
+        <div class="controls"><label class="field"><input id="amount2" type="number" min="0.01" step="0.01" value="25" aria-label="Amount to send"><span>to each</span></label><button class="btn" data-run="8" disabled>Send both</button></div>
+        <div class="status" aria-live="polite"></div>
+        <div class="out"></div>
+        <details class="code"><summary>The SDK call</summary><pre><code>// the same call as in step 4; the SDK finds the hook's accounts itself
+await transfer({ rpc, rpcSubscriptions, payer: you, owner: you, mint,
+                 destinationOwner: mallory.address, amount: 25_000_000n,
+                 auditorElgamalPubkey });   // refused: RecipientBlocked
+
+await transfer({ rpc, rpcSubscriptions, payer: you, owner: you, mint,
+                 destinationOwner: bob.address, amount: 25_000_000n,
+                 auditorElgamalPubkey });   // delivered</code></pre></details>
+      </li>
     </ol>
 
     <aside class="side">
@@ -264,6 +307,7 @@ await decryptTransferAmountAsAuditor({ rpc, signature, auditorKeypair }); // the
         <div class="row"><span>You</span><a id="addr-you" target="_blank" rel="noopener">…</a></div>
         <div class="row"><span>Bob</span><a id="addr-bob" target="_blank" rel="noopener">…</a></div>
         <div class="row"><span>Auditor</span><a id="addr-auditor" target="_blank" rel="noopener">…</a></div>
+        <div class="row"><span>Mallory</span><a id="addr-mallory" target="_blank" rel="noopener">…</a></div>
         <div class="row"><span>Your SOL</span><b id="sol">—</b></div>
         <table class="bal">
           <thead><tr><th></th><th>Public</th><th>Confidential</th></tr></thead>
@@ -290,7 +334,7 @@ await decryptTransferAmountAsAuditor({ rpc, signature, auditorKeypair }); // the
   <section id="finale" hidden>
     <div class="eyebrow" style="color:#dcdcff">Done</div>
     <h2>That was a private payment on a public chain.</h2>
-    <p>Configure, deposit, apply, transfer, decrypt, withdraw — every step a real devnet transaction. The same SDK powers <a href="https://softseco.com/devnet">PAPER on devnet</a>, where identity is checked at mint and redeem and a compliance hook screens every transfer.</p>
+    <p>Configure, deposit, apply, transfer, decrypt, withdraw, and a rule the chain enforced on a payment nobody else could read. Every step was a real devnet transaction. The same SDK and Sentinel power <a href="https://softseco.com/devnet">PAPER on devnet</a>, where identity is also checked at mint and redeem.</p>
     <p>Building payments, payroll or treasury on Solana? Tell us what broke: <a href="https://github.com/softseco/confidential-sdk/issues">open an issue</a> or write to hello@softseco.com.</p>
     <button class="btn light" id="again" type="button">Run it again</button>
   </section>

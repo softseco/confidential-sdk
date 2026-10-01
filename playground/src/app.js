@@ -4,6 +4,7 @@
 // run in the browser against Solana devnet with throwaway keys:
 //
 //   fund -> create a confidential mint -> deposit -> transfer -> decrypt -> withdraw
+//   -> a second mint with Sentinel as its transfer hook -> a blocked payment and an allowed one
 //
 // Every call below is the published SDK (@softseco/confidential-transfers) as an app would use it.
 import {
@@ -31,9 +32,11 @@ import {
   findAssociatedTokenPda,
   getInitializeConfidentialTransferMintInstruction,
   getInitializeMint2Instruction,
+  getInitializeTransferHookInstruction,
   getMintSize,
   getMintToInstruction,
 } from "@solana-program/token-2022";
+import { ZK_ELGAMAL_PROOF_PROGRAM_ADDRESS, getCloseContextStateInstruction } from "@solana-program/zk-elgamal-proof";
 import {
   applyPendingBalance,
   configureAccount,
@@ -46,6 +49,12 @@ import {
   withdraw,
 } from "@softseco/confidential-transfers";
 
+import {
+  SENTINEL_PROGRAM_ADDRESS,
+  getAddToBlocklistInstruction,
+  getInitializeExtraAccountMetaListInstruction,
+  getInitializePolicyInstruction,
+} from "./sentinel.js";
 import { initZk } from "./zk-shim.js";
 import { createPollingSubscriptions } from "./polling.js";
 
@@ -54,7 +63,9 @@ import { createPollingSubscriptions } from "./polling.js";
 const DECIMALS = 6;
 const UNIT = 10n ** BigInt(DECIMALS);
 const STORE = "softseco-ct-playground-v1";
-const MIN_SOL = 30_000_000n; // a full run costs about 0.01 SOL; proof accounts hold a little more for a moment
+const MIN_SOL = 50_000_000n; // a full run costs about 0.03 SOL; proof accounts hold a little more for a moment
+const RULES_SOL = 30_000_000n; // step 7 pays rent for a mint, its policy, a block entry and three token accounts
+const LAST = 8;
 
 const params = new URLSearchParams(location.search);
 const customRpc = params.get("rpc");
@@ -93,6 +104,7 @@ const acct = (a) => `https://explorer.solana.com/address/${a}?cluster=devnet`;
 // An error meant for the visitor as written, not a chain failure.
 const hint = (text) => Object.assign(new Error(text), { hint: true });
 const hex = (b) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+const esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);
 const unhex = (h) => new Uint8Array(h.match(/../g).map((x) => parseInt(x, 16)));
 
 // ---------------------------------------------------------------- state
@@ -112,22 +124,24 @@ function save() {
     /* private mode: the run still works, it just will not survive a reload */
   }
 }
-const freshSeeds = () => ({
-  you: hex(crypto.getRandomValues(new Uint8Array(32))),
-  bob: hex(crypto.getRandomValues(new Uint8Array(32))),
-  auditor: hex(crypto.getRandomValues(new Uint8Array(32))),
-});
+const seed = () => hex(crypto.getRandomValues(new Uint8Array(32)));
+const freshSeeds = () => ({ you: seed(), bob: seed(), auditor: seed(), mallory: seed() });
 
-const fresh = () => ({ seeds: freshSeeds(), done: 0, mint: null, bobMint: null, sent: null, signatures: [] });
+// `c` is the second token, the one with rules (steps 7 and 8).
+const fresh = () => ({ seeds: freshSeeds(), done: 0, mint: null, bobMint: null, sent: null, signatures: [], c: null });
 let state = load() ?? fresh();
+state.seeds.mallory ??= seed(); // a run saved before steps 7 and 8 existed
+state.c ??= null;
 let keys; // { you, bob, auditor } — kit signers
 let auditorKeypair; // ElGamal keypair derived from the auditor's wallet
 let busy = false;
 
 async function signers() {
   const make = (h) => createKeyPairSignerFromPrivateKeyBytes(unhex(h));
-  const [you, bob, auditor] = await Promise.all([make(state.seeds.you), make(state.seeds.bob), make(state.seeds.auditor)]);
-  return { you, bob, auditor };
+  const [you, bob, auditor, mallory] = await Promise.all(
+    [state.seeds.you, state.seeds.bob, state.seeds.auditor, state.seeds.mallory].map(make),
+  );
+  return { you, bob, auditor, mallory };
 }
 
 // ---------------------------------------------------------------- chain helpers
@@ -146,8 +160,9 @@ async function send(instructions) {
   return getSignatureFromTransaction(signed);
 }
 
-const ataOf = async (owner) =>
-  (await findAssociatedTokenPda({ owner, tokenProgram: TOKEN_2022_PROGRAM_ADDRESS, mint: address(state.mint) }))[0];
+const ataOn = async (mint, owner) =>
+  (await findAssociatedTokenPda({ owner, tokenProgram: TOKEN_2022_PROGRAM_ADDRESS, mint }))[0];
+const ataOf = (owner) => ataOn(address(state.mint), owner);
 
 async function publicBalance(owner) {
   try {
@@ -163,6 +178,38 @@ const confidentialBalance = (owner) => decryptBalance({ rpc, owner, mint: addres
 async function solBalance() {
   const { value } = await rpc.getBalance(keys.you.address).send();
   return value;
+}
+
+// A transfer refused by the hook stops after its proofs were verified into context accounts, so those
+// accounts stay open. Find the ones this wallet still owns and close them; the rent comes back.
+async function closeLeftoverProofs() {
+  const open = await rpc
+    .getProgramAccounts(ZK_ELGAMAL_PROOF_PROGRAM_ADDRESS, {
+      encoding: "base64",
+      dataSlice: { offset: 0, length: 0 },
+      filters: [{ memcmp: { offset: 0n, bytes: keys.you.address, encoding: "base58" } }], // context authority
+    })
+    .send();
+  const accounts = open.map((a) => a.pubkey);
+  for (let i = 0; i < accounts.length; i += 8) {
+    await send(accounts.slice(i, i + 8).map((contextState) =>
+      getCloseContextStateInstruction({ contextState, destination: keys.you.address, authority: keys.you })));
+  }
+  return accounts.length;
+}
+
+// Was this failure Sentinel refusing a blocked recipient? Returns the program's own words, or null.
+function refusal(err) {
+  const parts = [];
+  for (let e = err, depth = 0; e && depth < 6; e = e.cause, depth++) {
+    if (e.message) parts.push(e.message);
+    if (Array.isArray(e.context?.logs)) parts.push(...e.context.logs);
+  }
+  const all = parts.join("\n");
+  const blocked = /RecipientBlocked/.test(all) || (/"Custom":6003/.test(all) && all.includes(SENTINEL_PROGRAM_ADDRESS));
+  if (!blocked) return null;
+  const line = all.split("\n").find((l) => /Error Code: RecipientBlocked/.test(l)) ?? "";
+  return { message: "Recipient is blocklisted for this mint", log: line.replace(/^\s*Program log:\s*/, "").trim() };
 }
 
 // ---------------------------------------------------------------- the steps
@@ -321,7 +368,188 @@ const STEPS = {
       <div class="kv"><span>Bob public</span><b>${fmt(pub)}</b></div>
       <div class="kv"><span>Bob confidential</span><b>${fmt(conf)}</b></div>
       <div class="kv"><span>Withdraw</span><a href="${tx(signatures.at(-1))}" target="_blank" rel="noopener">transaction</a></div>
-      <p class="note done">That is the whole lifecycle: configure, deposit, apply, transfer, decrypt, withdraw.</p>`);
+      <p class="note done">That is the whole lifecycle: configure, deposit, apply, transfer, decrypt, withdraw. Next, the same transfer under a rule.</p>`);
+  },
+
+  7: async () => {
+    // Several transactions; each finished stage is saved, so a retry resumes where it stopped.
+    const c = (state.c ??= { stage: 0 });
+    if (!c.stage && (await solBalance()) < RULES_SOL) {
+      throw hint("This step pays rent for a new token, its rules and three token accounts, about 0.02 SOL. Top up the address above and press the button again.");
+    }
+    if (c.stage < 1) {
+      say(7, "Creating a confidential token whose transfer hook is Sentinel…");
+      const mint = await generateKeyPairSigner();
+      const auditorElgamalPubkey = getAuditorElgamalPubkey(auditorKeypair);
+      const ext = [
+        extension("TransferHook", { authority: keys.you.address, programId: SENTINEL_PROGRAM_ADDRESS }),
+        extension("ConfidentialTransferMint", {
+          authority: some(keys.you.address),
+          autoApproveNewAccounts: true,
+          auditorElgamalPubkey: some(auditorElgamalPubkey),
+        }),
+      ];
+      const space = BigInt(getMintSize(ext));
+      const rent = await rpc.getMinimumBalanceForRentExemption(space).send();
+      c.createdTx = await send([
+        getCreateAccountInstruction({
+          payer: keys.you,
+          newAccount: mint,
+          lamports: rent,
+          space,
+          programAddress: TOKEN_2022_PROGRAM_ADDRESS,
+        }),
+        // extensions first, then the mint itself
+        getInitializeTransferHookInstruction({ mint: mint.address, authority: keys.you.address, programId: SENTINEL_PROGRAM_ADDRESS }),
+        getInitializeConfidentialTransferMintInstruction({
+          mint: mint.address,
+          authority: some(keys.you.address),
+          autoApproveNewAccounts: true,
+          auditorElgamalPubkey: some(auditorElgamalPubkey),
+        }),
+        getInitializeMint2Instruction({
+          mint: mint.address,
+          decimals: DECIMALS,
+          mintAuthority: keys.you.address,
+          freezeAuthority: none(),
+        }),
+      ]);
+      c.mint = mint.address;
+      c.stage = 1;
+      save();
+    }
+    const mint = address(c.mint);
+
+    if (c.stage < 2) {
+      say(7, "Sentinel: registering the hook's accounts, turning the blocklist on and adding Mallory…");
+      c.rulesTx = await send([
+        await getInitializeExtraAccountMetaListInstruction({ payer: keys.you, mint }),
+        await getInitializePolicyInstruction({
+          authority: keys.you,
+          mint,
+          allowlist: false,
+          blocklist: true,
+          maxTransferAmount: 0n,
+          allowConfidential: true,
+        }),
+        await getAddToBlocklistInstruction({ authority: keys.you, mint, wallet: keys.mallory.address }),
+      ]);
+      c.stage = 2;
+      save();
+    }
+
+    const owners = [["your", keys.you], ["Bob's", keys.bob], ["Mallory's", keys.mallory]];
+    for (const [i, [whose, owner]] of owners.entries()) {
+      if (c.stage < 3 + i) {
+        say(7, `Configuring ${whose} account on this token for confidential transfers…`);
+        await configureAccount({ ...sdk, payer: keys.you, owner, mint });
+        c.stage = 3 + i;
+        save();
+      }
+    }
+
+    if (c.stage < 6) {
+      say(7, "Minting 100 test dollars to you…");
+      await send([getMintToInstruction({ mint, token: await ataOn(mint, keys.you.address), mintAuthority: keys.you, amount: 100n * UNIT })]);
+      c.stage = 6;
+      save();
+    }
+    if (c.stage < 7) {
+      say(7, "Depositing them into your confidential balance…");
+      await deposit({ ...sdk, payer: keys.you, owner: keys.you, mint, amount: 100n * UNIT, decimals: DECIMALS });
+      c.stage = 7;
+      save();
+    }
+    if (c.stage < 8) {
+      say(7, "Applying the pending balance…");
+      await applyPendingBalance({ ...sdk, payer: keys.you, owner: keys.you, mint });
+      c.stage = 8;
+      save();
+    }
+
+    const conf = await decryptBalance({ rpc, owner: keys.you, mint });
+    out(7, `
+      <div class="kv"><span>Token</span><a href="${acct(c.mint)}" target="_blank" rel="noopener">${short(c.mint)}</a><em>transfer hook: <a href="${acct(SENTINEL_PROGRAM_ADDRESS)}" target="_blank" rel="noopener">Sentinel</a></em></div>
+      <div class="kv"><span>Policy</span><b>blocklist on</b>${c.rulesTx ? `<a href="${tx(c.rulesTx)}" target="_blank" rel="noopener">transaction</a>` : ""}</div>
+      <div class="kv"><span>Blocklisted</span><b>Mallory</b><a href="${acct(keys.mallory.address)}" target="_blank" rel="noopener">${short(keys.mallory.address)}</a></div>
+      <div class="kv"><span>Your confidential</span><b>${fmt(conf)}</b><em>on this token</em></div>`);
+  },
+
+  8: async () => {
+    const c = state.c;
+    const mint = address(c.mint);
+    const whole = Number($("#amount2").value);
+    if (!Number.isFinite(whole) || whole <= 0) throw hint("Enter an amount above zero.");
+    const amount = BigInt(Math.round(whole * 100)) * (UNIT / 100n);
+    const auditorElgamalPubkey = getAuditorElgamalPubkey(auditorKeypair);
+    if (!c.sent) {
+      const available = await decryptBalance({ rpc, owner: keys.you, mint });
+      if (amount > available) throw hint(`You have ${fmt(available)} in your confidential balance of this token.`);
+    }
+
+    if (!c.refused) {
+      say(8, "Paying Mallory. The proofs go first, then Token-2022 asks Sentinel…");
+      try {
+        await transfer({ ...sdk, payer: keys.you, owner: keys.you, mint, destinationOwner: keys.mallory.address, amount, auditorElgamalPubkey });
+      } catch (err) {
+        const why = refusal(err);
+        if (!why) throw err;
+        c.refused = why;
+        save();
+      }
+      if (!c.refused) {
+        throw hint("Sentinel let the payment to Mallory through, which should not happen. Start over with new keys, and please open an issue on GitHub.");
+      }
+    }
+
+    if (!c.cleaned) {
+      say(8, "Closing the proof accounts the refused payment left open, so their rent comes back…");
+      try {
+        c.closed = await closeLeftoverProofs();
+      } catch (err) {
+        console.error(err);
+        c.closed = -1;
+      }
+      c.cleaned = true;
+      save();
+    }
+
+    if (!c.sent) {
+      say(8, "Paying Bob the same amount, under the same rules…");
+      const { signatures } = await transfer({ ...sdk, payer: keys.you, owner: keys.you, mint, destinationOwner: keys.bob.address, amount, auditorElgamalPubkey });
+      c.signatures = signatures.map(String);
+      c.sent = amount.toString();
+      save();
+    }
+    if (!c.applied) {
+      say(8, "Bob applies his pending balance…");
+      await applyPendingBalance({ ...sdk, payer: keys.you, owner: keys.bob, mint });
+      c.applied = true;
+      save();
+    }
+
+    say(8, "Decrypting as Bob and as the auditor…");
+    const bobs = await decryptBalance({ rpc, owner: keys.bob, mint });
+    let seen = null;
+    for (const s of c.signatures) {
+      try {
+        seen = await decryptTransferAmountAsAuditor({ rpc, signature: s, auditorKeypair });
+        break;
+      } catch {
+        /* only the transfer itself carries the auditor ciphertext */
+      }
+    }
+    const proofs = c.closed > 0
+      ? `The refused payment's ${c.closed} proof account${c.closed === 1 ? " was" : "s were"} closed and the rent went back to you.`
+      : c.closed === 0
+        ? "The refused payment left no proof accounts open."
+        : "The refused payment's proof accounts could not be closed from this page; they hold a little devnet rent.";
+    out(8, `
+      <div class="who stop"><b>Mallory</b><span>refused by Sentinel: <strong>${esc(c.refused.message)}</strong></span>${c.refused.log ? `<code class="log">${esc(c.refused.log)}</code>` : ""}</div>
+      <div class="who ok"><b>Bob</b><span>received <strong>${fmt(bobs)}</strong>, still encrypted on-chain · <a href="${tx(c.signatures.at(-1) ?? "")}" target="_blank" rel="noopener">the transfer, with Sentinel's check in its logs</a></span></div>
+      <div class="who ok"><b>The auditor</b><span>reads <strong>${seen === null ? "not found" : fmt(seen)}</strong></span></div>
+      <p class="note">${proofs}</p>
+      <p class="note done">The amount stayed private, and the rule was still enforced by the chain.</p>`);
   },
 };
 
@@ -346,7 +574,7 @@ function paint() {
   $("#reset").disabled = busy;
   $("#restart").disabled = busy;
   $("#again").disabled = busy;
-  $("#finale").hidden = state.done < 6;
+  $("#finale").hidden = state.done < LAST;
 }
 
 async function refreshSide() {
@@ -357,6 +585,8 @@ async function refreshSide() {
   $("#addr-bob").href = acct(keys.bob.address);
   $("#addr-auditor").textContent = short(keys.auditor.address);
   $("#addr-auditor").href = acct(keys.auditor.address);
+  $("#addr-mallory").textContent = short(keys.mallory.address);
+  $("#addr-mallory").href = acct(keys.mallory.address);
   try {
     $("#sol").textContent = sol(await solBalance());
   } catch {
