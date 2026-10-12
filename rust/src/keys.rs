@@ -9,27 +9,121 @@
 //! stored, and byte-identical to what the TypeScript SDK, the Token-2022
 //! clients and every other standard client derive for the same wallet.
 //!
-//! Before 2.0.0 this crate seeded the derivation with the token-account address
-//! while the TypeScript SDK seeded it with `(owner, mint)`. The two schemes
-//! disagreed, so an account configured with one could not be read with the
-//! other; see CHANGELOG.md for the migration.
-use solana_sdk::signer::Signer;
+//! A token account owned by a program (a PDA) cannot sign, so its keys come
+//! from an operator's wallet with a seed that scopes them to that account:
+//! [`ConfidentialKeys::derive_for_pda_wallet`], the same convention as the
+//! TypeScript SDK's `pdaWalletPublicSeed`.
+use solana_sdk::{pubkey::Pubkey, signer::Signer};
 use solana_zk_sdk::encryption::{
-    auth_encryption::AeKey, derivation::derive_confidential_keys, elgamal::ElGamalKeypair,
+    auth_encryption::AeKey,
+    derivation::{derive_confidential_keys, derive_confidential_keys_from_signature},
+    elgamal::{ElGamalKeypair, ElGamalPubkey},
 };
 
-/// Derive the wallet's `(ElGamal keypair, AES key)` for confidential balances.
-///
-/// The derivation takes no seed: the same wallet yields the same keys for every
-/// mint and token account, which is what makes them interoperable with other
-/// standard clients.
-pub fn derive_account_keys(
+use crate::error::{Error, ErrorCode, Result};
+
+/// An account's ElGamal keypair (balances and amounts) and AES key (the owner's fast
+/// copy of the available balance).
+pub struct ConfidentialKeys {
+    pub elgamal: ElGamalKeypair,
+    pub ae: AeKey,
+}
+
+impl ConfidentialKeys {
+    /// The wallet's standard keys: what every standard client derives for this wallet.
+    pub fn derive(owner: &dyn Signer) -> Result<Self> {
+        Self::derive_with_seed(owner, b"")
+    }
+
+    /// Keys from the message `solana-conf-bal/v1 || public_seed`. A non-empty seed gives keys no
+    /// other client derives for the wallet; use it only for a scheme that needs keys scoped more
+    /// finely than the wallet, such as a program-owned account ([`Self::derive_for_pda_wallet`]).
+    pub fn derive_with_seed(signer: &dyn Signer, public_seed: &[u8]) -> Result<Self> {
+        let operation = "derive keys";
+        let message =
+            solana_zk_sdk::encryption::derivation::confidential_derivation_message(public_seed);
+        let signature = signer.try_sign_message(&message).map_err(|e| {
+            Error::new(
+                ErrorCode::CannotSignMessages,
+                operation,
+                format!(
+                    "signer {} could not sign the key-derivation message: {e}",
+                    signer.pubkey()
+                ),
+            )
+            .with_source(e)
+        })?;
+        // A signature that does not verify gives keys nobody can derive again.
+        if !signature.verify(signer.pubkey().as_ref(), &message) {
+            return Err(Error::new(
+                ErrorCode::BadMessageSignature,
+                operation,
+                format!(
+                    "signer {} returned a signature that does not verify against its address",
+                    signer.pubkey()
+                ),
+            ));
+        }
+        let (elgamal, ae) = derive_confidential_keys_from_signature(&signature).map_err(|e| {
+            Error::new(
+                ErrorCode::BadMessageSignature,
+                operation,
+                format!("cannot derive keys from the signature: {e}"),
+            )
+        })?;
+        Ok(Self { elgamal, ae })
+    }
+
+    /// Keys for a token account owned by a program (a PDA wallet), derived by `operator` with
+    /// the seed [`pda_wallet_public_seed`]. Whoever holds `operator` can read the account and
+    /// prepare its transfers; the program signs them.
+    pub fn derive_for_pda_wallet(
+        operator: &dyn Signer,
+        program_id: &Pubkey,
+        wallet_pda: &Pubkey,
+        mint: &Pubkey,
+        token_account: &Pubkey,
+    ) -> Result<Self> {
+        Self::derive_with_seed(
+            operator,
+            &pda_wallet_public_seed(program_id, wallet_pda, mint, token_account),
+        )
+    }
+
+    /// The ElGamal public key, as it is stored in a configured account.
+    pub fn elgamal_pubkey(&self) -> &ElGamalPubkey {
+        self.elgamal.pubkey()
+    }
+}
+
+/// The canonical seed for a program-owned (PDA) wallet's keys:
+/// `program_id || wallet_pda || mint || token_account`, 128 bytes. The TypeScript SDK's
+/// `pdaWalletPublicSeed` builds the same bytes.
+pub fn pda_wallet_public_seed(
+    program_id: &Pubkey,
+    wallet_pda: &Pubkey,
+    mint: &Pubkey,
+    token_account: &Pubkey,
+) -> Vec<u8> {
+    [program_id, wallet_pda, mint, token_account]
+        .iter()
+        .flat_map(|p| p.to_bytes())
+        .collect()
+}
+
+/// Derive the wallet's `(ElGamal keypair, AES key)` for confidential balances: the standard
+/// derivation, with no seed. Same as [`ConfidentialKeys::derive`].
+pub fn derive_account_keys(owner: &dyn Signer) -> Result<(ElGamalKeypair, AeKey)> {
+    let keys = ConfidentialKeys::derive(owner)?;
+    Ok((keys.elgamal, keys.ae))
+}
+
+/// Same as [`derive_account_keys`], through the zk-sdk's own signing helper. Kept to check the two
+/// paths against each other.
+#[doc(hidden)]
+pub fn derive_account_keys_via_zk_sdk(
     owner: &dyn Signer,
-) -> Result<(ElGamalKeypair, AeKey), Box<dyn std::error::Error>> {
-    // The empty public seed is the standard derivation: the signed message is
-    // `HKDF_SALT` alone, i.e. exactly `solana-conf-bal/v1`. A non-empty seed
-    // appends to that message and produces keys no other standard client can
-    // reproduce for the same wallet.
+) -> std::result::Result<(ElGamalKeypair, AeKey), Box<dyn std::error::Error>> {
     derive_confidential_keys(owner, b"")
 }
 
@@ -38,44 +132,33 @@ mod tests {
     use super::*;
     use solana_sdk::signature::Keypair;
 
-    // Cross-language vector. The TypeScript SDK pins the same signer and the
-    // same expected output in test/keys.test.ts ("matches the pinned standard
-    // derivation vector"). If either half drifts away from the standard
-    // derivation, one of the two tests fails \u2014 which is exactly the check
-    // 1.x did not have, and why the two bindings could disagree unnoticed.
-    const VECTOR_SECRET_KEY: [u8; 32] = [
-        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
-        26, 27, 28, 29, 30, 31, 32,
-    ];
-    const VECTOR_ELGAMAL_SECRET_KEY: [u8; 32] = [
-        18, 9, 170, 121, 195, 51, 117, 115, 170, 156, 1, 205, 213, 187, 10, 37, 32, 121, 194, 13,
-        155, 15, 88, 37, 156, 188, 30, 250, 119, 108, 238, 6,
-    ];
-    const VECTOR_AE_KEY: [u8; 16] = [
-        95, 104, 35, 1, 89, 137, 42, 78, 42, 160, 111, 199, 94, 5, 99, 223,
-    ];
-
     #[test]
-    fn matches_the_typescript_standard_derivation_vector() {
-        let owner = Keypair::new_from_array(VECTOR_SECRET_KEY);
-        let (elgamal, ae_key) = derive_account_keys(&owner).expect("derivation failed");
-        assert_eq!(
-            elgamal.secret().as_bytes(),
-            &VECTOR_ELGAMAL_SECRET_KEY,
-            "ElGamal secret key does not match the TypeScript vector"
-        );
-        assert_eq!(
-            <[u8; 16]>::from(&ae_key),
-            VECTOR_AE_KEY,
-            "AES key does not match the TypeScript vector"
-        );
+    fn matches_the_zk_sdk_derivation() {
+        let owner = Keypair::new();
+        let (a, ae_a) = derive_account_keys(&owner).unwrap();
+        let (b, ae_b) = derive_account_keys_via_zk_sdk(&owner).unwrap();
+        assert_eq!(a.secret().as_bytes(), b.secret().as_bytes());
+        assert_eq!(<[u8; 16]>::from(&ae_a), <[u8; 16]>::from(&ae_b));
     }
 
     #[test]
     fn is_deterministic_and_wallet_bound() {
-        let owner = Keypair::new_from_array(VECTOR_SECRET_KEY);
+        let owner = Keypair::new();
         let (a, _) = derive_account_keys(&owner).unwrap();
         let (b, _) = derive_account_keys(&owner).unwrap();
+        let (c, _) = derive_account_keys(&Keypair::new()).unwrap();
         assert_eq!(a.secret().as_bytes(), b.secret().as_bytes());
+        assert_ne!(a.secret().as_bytes(), c.secret().as_bytes());
+    }
+
+    #[test]
+    fn scopes_seeded_keys_away_from_the_standard_keys() {
+        let owner = Keypair::new();
+        let standard = ConfidentialKeys::derive(&owner).unwrap();
+        let seeded = ConfidentialKeys::derive_with_seed(&owner, &[1, 2, 3, 4]).unwrap();
+        assert_ne!(
+            standard.elgamal.secret().as_bytes(),
+            seeded.elgamal.secret().as_bytes()
+        );
     }
 }

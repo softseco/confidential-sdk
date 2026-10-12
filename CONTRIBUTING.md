@@ -62,8 +62,22 @@ cd rust
 cargo fmt --all --check
 cargo clippy --all-targets -- -D warnings
 cargo build
-cargo test          # unit tests
+cargo test          # unit tests and the shared vectors; on-chain tests skip
 ```
+
+On-chain tests, from the repository root (the Anchor example is optional; its test skips without
+it):
+
+```bash
+(cd rust/examples/anchor-vault && cargo build-sbf --manifest-path programs/confidential-vault/Cargo.toml)
+TOKEN_2022_SO=test/fixtures/spl_token_2022.so SENTINEL_SO=test/fixtures/sentinel.so \
+CONFIDENTIAL_VAULT_SO=rust/examples/anchor-vault/target/deploy/confidential_vault.so \
+  bash scripts/start-test-validator.sh
+cd rust && CT_LOCAL_PROGRAM=1 cargo test -- --test-threads 1
+```
+
+`test-vectors/confidential-transfers.json` is read by both test suites. Change it only on
+purpose, and both suites must pass.
 
 Dependencies are pinned with `=` to the exact set the official `spl-token-cli` uses, because the
 Solana crate ecosystem is mid-migration (3.x → 4.x) and newer patches pull conflicting majors.
@@ -73,8 +87,8 @@ Keep `Cargo.lock` committed and in sync when changing dependencies.
 
 - Open an issue first for anything larger than a small fix, so we can align on the approach.
 - Keep the two packages in parity where possible: a change to a helper's behavior should land in
-  both TS and Rust, or explain why not. Known gaps today: the Rust crate has no `withdraw` and does
-  not resolve transfer-hook accounts.
+  both TS and Rust, or explain why not. Known gaps today: the auditor report
+  (`listConfidentialActivity`) is TypeScript only.
 - Before pushing: unit tests pass, `tsc` is clean, and (for Rust) `fmt`/`clippy` are clean. CI runs
   all of these.
 - Update [CHANGELOG.md](./CHANGELOG.md) under an `Unreleased` heading, and the docs if you change

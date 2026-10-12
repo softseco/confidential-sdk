@@ -1,166 +1,349 @@
 // SPDX-License-Identifier: Apache-2.0
-//! End-to-end integration test for the confidential-transfer flow.
-//!
-//! Gated behind `CT_LOCAL_PROGRAM=1`: it requires a local validator running the
-//! ZK ElGamal Proof Program plus a client-matching Token-2022 build (the same
-//! setup the TypeScript SDK's on-chain tests use). Run with:
-//!
-//!   CT_LOCAL_PROGRAM=1 cargo test --test ct_integration -- --nocapture
-//!
-//! Without the env var the test is skipped, so `cargo test` stays green in CI.
+//! On-chain tests of the crate against a local validator (see tests/common/mod.rs for the setup).
+//! Skipped unless CT_LOCAL_PROGRAM=1, so `cargo test` stays green without a validator.
+mod common;
+
 use std::sync::Arc;
 
-use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{pubkey::Pubkey, signature::Keypair, signer::Signer};
-use spl_token_client::{
-    client::{ProgramRpcClient, ProgramRpcClientSendTransaction},
-    token::{ExtensionInitializationParams, Token},
-};
-
+use common::*;
 use softseco_confidential_transfers::{
-    apply_pending_balance, configure_account, decrypt_balance, deposit, transfer,
+    decrypt_auditor_amount, derive_auditor_keypair, ConfidentialClient, ConfidentialKeys, ErrorCode,
 };
+use solana_sdk::{pubkey::Pubkey, signature::Signature, signer::Signer};
+use solana_zk_sdk::encryption::elgamal::ElGamalCiphertext;
+use solana_zk_sdk_pod::encryption::elgamal::{PodElGamalCiphertext, PodElGamalPubkey};
 
-const RPC_URL: &str = "http://127.0.0.1:8899";
-const DECIMALS: u8 = 2;
+const COMPUTE_BUDGET: Pubkey = solana_sdk::pubkey!("ComputeBudget111111111111111111111111111111");
 
 #[tokio::test]
-async fn confidential_transfer_end_to_end() {
-    if std::env::var("CT_LOCAL_PROGRAM").is_err() {
-        eprintln!("skipping: set CT_LOCAL_PROGRAM=1 and run a local validator with the ZK program");
-        return;
-    }
-    run().await.expect("confidential transfer flow failed");
-}
+async fn transfers_and_withdraws_with_an_auditor_and_a_priority_fee() {
+    let Some(rpc) = on_chain() else { return };
+    let payer: Arc<dyn Signer> = Arc::new(funded(&rpc).await);
+    let client = ConfidentialClient::new(rpc.clone(), payer.clone()).with_compute_unit_price(1_000);
 
-async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let rpc = Arc::new(RpcClient::new(RPC_URL.to_string()));
-
-    // Only the fee payer needs SOL; owners sign but the payer covers fees + rent.
-    let payer: Arc<dyn Signer> = Arc::new(Keypair::new());
-    airdrop(&rpc, &payer.pubkey(), 2_000_000_000).await?;
-    eprintln!(
-        "[setup] payer balance = {}",
-        rpc.get_balance(&payer.pubkey()).await?
-    );
-
-    let mint = Keypair::new();
-    let mint_authority = Keypair::new();
-    let alice = Keypair::new();
-    let bob = Keypair::new();
-
-    // 1. Create a Token-2022 mint with the ConfidentialTransfer extension.
-    eprintln!("[1] create mint");
-    let token = Token::new(
-        Arc::new(ProgramRpcClient::new(
-            rpc.clone(),
-            ProgramRpcClientSendTransaction,
-        )),
-        &spl_token_2022::id(),
-        &mint.pubkey(),
-        Some(DECIMALS),
+    let auditor_wallet = solana_sdk::signature::Keypair::new();
+    let auditor = derive_auditor_keypair(&auditor_wallet).unwrap();
+    let mint = create_mint(
+        &rpc,
         payer.clone(),
-    );
-    token
-        .create_mint(
-            &mint_authority.pubkey(),
-            None,
-            vec![ExtensionInitializationParams::ConfidentialTransferMint {
-                authority: Some(mint_authority.pubkey()),
-                auto_approve_new_accounts: true,
-                auditor_elgamal_pubkey: None,
-            }],
-            &[&mint],
-        )
-        .await?;
-
-    // 2. Configure Alice and Bob for confidential transfers.
-    eprintln!("[2a] configure alice");
-    configure_account(RPC_URL, payer.clone(), &alice, &mint.pubkey(), DECIMALS).await?;
-    eprintln!("[2b] configure bob");
-    configure_account(RPC_URL, payer.clone(), &bob, &mint.pubkey(), DECIMALS).await?;
-
-    // 3. Mint public tokens to Alice, move them into the confidential balance.
-    let alice_ata = token.get_associated_token_address(&alice.pubkey());
-    eprintln!("[3a] mint_to alice");
-    token
-        .mint_to(
-            &alice_ata,
-            &mint_authority.pubkey(),
-            1000,
-            &[&mint_authority],
-        )
-        .await?;
-    eprintln!("[3b] deposit");
-    deposit(
-        RPC_URL,
-        payer.clone(),
-        &alice,
-        &mint.pubkey(),
-        1000,
-        DECIMALS,
-    )
-    .await?;
-    eprintln!("[3c] apply alice");
-    apply_pending_balance(RPC_URL, payer.clone(), &alice, &mint.pubkey(), DECIMALS).await?;
-
-    // 4. Confidentially transfer 400 from Alice to Bob.  <-- the path under test (R1).
-    eprintln!("[4] TRANSFER (the path under test)");
-    transfer(
-        RPC_URL,
-        payer.clone(),
-        &alice,
-        &mint.pubkey(),
-        &bob.pubkey(),
-        400,
-        DECIMALS,
+        Some(PodElGamalPubkey::from(*auditor.pubkey())),
         None,
     )
-    .await?;
+    .await;
+    let (alice, bob) = (
+        solana_sdk::signature::Keypair::new(),
+        solana_sdk::signature::Keypair::new(),
+    );
 
-    // 5. Bob rolls in his pending balance and decrypts it.
-    eprintln!("[5] apply bob + decrypt");
-    apply_pending_balance(RPC_URL, payer.clone(), &bob, &mint.pubkey(), DECIMALS).await?;
-    let bob_balance =
-        decrypt_balance(RPC_URL, payer.clone(), &bob, &mint.pubkey(), DECIMALS).await?;
-    assert_eq!(bob_balance, 400, "Bob should have received 400");
+    let alice_account = client
+        .configure_account(&alice, &mint.mint)
+        .await
+        .unwrap()
+        .token_account;
+    client.configure_account(&bob, &mint.mint).await.unwrap();
+    mint.mint_to(&alice_account, 1_000).await;
+    client.deposit(&alice, &mint.mint, 1_000).await.unwrap();
+    client
+        .apply_pending_balance(&alice, &mint.mint)
+        .await
+        .unwrap();
+    assert_eq!(
+        client.decrypt_balance(&alice, &mint.mint).await.unwrap(),
+        1_000
+    );
+    assert_eq!(public_balance(&rpc, &alice_account).await, 0);
 
-    // 6. Alice keeps the remaining 600.
-    let alice_balance =
-        decrypt_balance(RPC_URL, payer.clone(), &alice, &mint.pubkey(), DECIMALS).await?;
-    assert_eq!(alice_balance, 600, "Alice should have 600 left");
+    // No auditor key passed: the crate reads it from the mint.
+    let sent = client
+        .transfer(&alice, &mint.mint, &bob.pubkey(), 400)
+        .await
+        .unwrap();
+    assert_eq!(
+        sent.signatures.len(),
+        5,
+        "four proof transactions and the transfer"
+    );
+    client
+        .apply_pending_balance(&bob, &mint.mint)
+        .await
+        .unwrap();
+    assert_eq!(client.decrypt_balance(&bob, &mint.mint).await.unwrap(), 400);
 
-    println!("OK — Alice: {alice_balance}, Bob: {bob_balance}");
-    Ok(())
+    // The auditor reads the amount from the transfer instruction.
+    let (data, programs) = token_instruction(&rpc, &sent.transfer_signature, [27, 7]).await;
+    let ciphertext = |range: std::ops::Range<usize>| {
+        ElGamalCiphertext::try_from(PodElGamalCiphertext(data[range].try_into().unwrap())).unwrap()
+    };
+    assert_eq!(
+        decrypt_auditor_amount(&auditor, &ciphertext(38..102), &ciphertext(102..166)).unwrap(),
+        400
+    );
+    assert!(
+        programs.contains(&COMPUTE_BUDGET),
+        "the transfer transaction carries the priority fee"
+    );
+
+    let withdrawn = client.withdraw(&alice, &mint.mint, 100).await.unwrap();
+    assert_eq!(
+        withdrawn.signatures.len(),
+        4,
+        "three proof transactions and the withdraw"
+    );
+    assert_eq!(
+        client.decrypt_balance(&alice, &mint.mint).await.unwrap(),
+        500
+    );
+    assert_eq!(public_balance(&rpc, &alice_account).await, 100);
+
+    // Every proof account was closed, and its rent went back to the payer.
+    assert_eq!(proof_accounts_of(&rpc, &payer.pubkey()).await, 0);
 }
 
-async fn airdrop(
-    rpc: &RpcClient,
-    pubkey: &Pubkey,
-    lamports: u64,
-) -> Result<(), Box<dyn std::error::Error>> {
-    // Local faucets occasionally rate-limit back-to-back requests; retry a few times.
-    let mut last_err: Option<Box<dyn std::error::Error>> = None;
-    for _ in 0..8 {
-        match rpc.request_airdrop(pubkey, lamports).await {
-            Ok(_signature) => {
-                // Wait until the balance is actually visible before returning.
-                for _ in 0..40 {
-                    if rpc.get_balance(pubkey).await.unwrap_or(0) >= lamports {
-                        return Ok(());
-                    }
-                    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
-                }
-                // Airdrop was accepted but never credited — a stalled validator.
-                // Fall through and retry rather than silently returning success.
-                last_err =
-                    Some("airdrop accepted but balance never credited (validator stalled?)".into());
-            }
-            Err(e) => {
-                last_err = Some(Box::new(e));
-                tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
-            }
-        }
+#[tokio::test]
+async fn refuses_before_signing_anything() {
+    let Some(rpc) = on_chain() else { return };
+    let payer: Arc<dyn Signer> = Arc::new(funded(&rpc).await);
+    let client = ConfidentialClient::new(rpc.clone(), payer.clone());
+    let mint = create_mint(&rpc, payer.clone(), None, None).await;
+    let (alice, bob, carol) = (
+        solana_sdk::signature::Keypair::new(),
+        solana_sdk::signature::Keypair::new(),
+        solana_sdk::signature::Keypair::new(),
+    );
+    let alice_account = client
+        .configure_account(&alice, &mint.mint)
+        .await
+        .unwrap()
+        .token_account;
+    client.configure_account(&bob, &mint.mint).await.unwrap();
+    mint.mint_to(&alice_account, 50).await;
+    let lamports_before = rpc.get_balance(&payer.pubkey()).await.unwrap();
+
+    assert_eq!(
+        code(client.configure_account(&alice, &mint.mint).await),
+        ErrorCode::AccountAlreadyConfigured
+    );
+    assert_eq!(
+        code(client.deposit(&alice, &mint.mint, 0).await),
+        ErrorCode::InvalidInput
+    );
+    assert_eq!(
+        code(client.deposit(&alice, &mint.mint, 1 << 48).await),
+        ErrorCode::AmountTooLarge
+    );
+    assert_eq!(
+        code(client.deposit(&alice, &mint.mint, 51).await),
+        ErrorCode::InsufficientFunds
+    );
+    assert_eq!(
+        code(client.deposit(&carol, &mint.mint, 1).await),
+        ErrorCode::AccountNotFound
+    );
+    assert_eq!(
+        code(client.transfer(&alice, &mint.mint, &bob.pubkey(), 1).await),
+        ErrorCode::InsufficientFunds
+    );
+    let missing = client
+        .transfer(&alice, &mint.mint, &carol.pubkey(), 1)
+        .await
+        .unwrap_err();
+    assert_eq!(missing.code(), ErrorCode::AccountNotFound);
+    assert!(
+        missing
+            .to_string()
+            .contains("the recipient's token account"),
+        "{missing}"
+    );
+    assert_eq!(
+        code(client.withdraw(&alice, &mint.mint, 1).await),
+        ErrorCode::InsufficientFunds
+    );
+    let bob_keys = ConfidentialKeys::derive(&bob).unwrap();
+    assert_eq!(
+        code(
+            client
+                .decrypt_balance_of(&mint.mint, &alice_account, &bob_keys)
+                .await
+        ),
+        ErrorCode::KeysMismatch
+    );
+    assert_eq!(
+        code(client.deposit(&alice, &Pubkey::new_unique(), 1).await),
+        ErrorCode::AccountNotFound
+    );
+
+    assert_eq!(
+        rpc.get_balance(&payer.pubkey()).await.unwrap(),
+        lamports_before,
+        "nothing was sent"
+    );
+}
+
+#[tokio::test]
+async fn goes_through_a_transfer_hook_and_cleans_up_when_the_hook_refuses() {
+    let Some(rpc) = on_chain() else { return };
+    if rpc.get_account(&SENTINEL).await.is_err() {
+        eprintln!("skipping: Sentinel is not loaded on the validator (--bpf-program {SENTINEL} test/fixtures/sentinel.so)");
+        return;
     }
-    Err(last_err.unwrap_or_else(|| "airdrop failed after retries".into()))
+    let payer: Arc<dyn Signer> = Arc::new(funded(&rpc).await);
+    let client = ConfidentialClient::new(rpc.clone(), payer.clone());
+    let mint = create_mint(&rpc, payer.clone(), None, Some(SENTINEL)).await;
+    // Sentinel cannot check a confidential amount, so it refuses confidential transfers until the
+    // issuer opts in.
+    setup_sentinel(&rpc, &mint, false).await;
+    let (alice, bob) = (
+        solana_sdk::signature::Keypair::new(),
+        solana_sdk::signature::Keypair::new(),
+    );
+    let alice_account = client
+        .configure_account(&alice, &mint.mint)
+        .await
+        .unwrap()
+        .token_account;
+    client.configure_account(&bob, &mint.mint).await.unwrap();
+    mint.mint_to(&alice_account, 1_000).await;
+    client.deposit(&alice, &mint.mint, 1_000).await.unwrap();
+    client
+        .apply_pending_balance(&alice, &mint.mint)
+        .await
+        .unwrap();
+
+    // The proofs go through, then the hook refuses the transfer: the crate closes the proof
+    // accounts and says which step failed.
+    let refused = client
+        .transfer(&alice, &mint.mint, &bob.pubkey(), 300)
+        .await
+        .unwrap_err();
+    assert_eq!(refused.code(), ErrorCode::TransactionFailed, "{refused}");
+    assert_eq!(refused.step(), Some("transfer"));
+    assert!(
+        refused
+            .logs()
+            .iter()
+            .any(|l| l.contains(&format!("Program {SENTINEL} invoke"))),
+        "Sentinel ran as the hook"
+    );
+    let proofs = refused.proof_accounts().expect("proof accounts reported");
+    assert_eq!((proofs.closed.len(), proofs.left_open.len()), (3, 0));
+    assert_eq!(
+        refused.signatures().len(),
+        5,
+        "four proof transactions and one that closed them"
+    );
+    assert_eq!(proof_accounts_of(&rpc, &payer.pubkey()).await, 0);
+    assert_eq!(
+        client.decrypt_balance(&alice, &mint.mint).await.unwrap(),
+        1_000
+    );
+
+    // With the opt-in, the same transfer goes through Sentinel.
+    set_sentinel_confidential(&rpc, &mint, true).await;
+    let sent = client
+        .transfer(&alice, &mint.mint, &bob.pubkey(), 300)
+        .await
+        .unwrap();
+    let (_, programs) = token_instruction(&rpc, &sent.transfer_signature, [27, 7]).await;
+    assert!(
+        programs.contains(&SENTINEL),
+        "the transfer passed Sentinel's accounts"
+    );
+    client
+        .apply_pending_balance(&bob, &mint.mint)
+        .await
+        .unwrap();
+    assert_eq!(client.decrypt_balance(&bob, &mint.mint).await.unwrap(), 300);
+}
+
+#[tokio::test]
+async fn recovers_proof_accounts_left_behind() {
+    let Some(rpc) = on_chain() else { return };
+    let payer: Arc<dyn Signer> = Arc::new(funded(&rpc).await);
+    let client = ConfidentialClient::new(rpc.clone(), payer.clone());
+    let mint = create_mint(&rpc, payer.clone(), None, None).await;
+    let (alice, bob) = (
+        solana_sdk::signature::Keypair::new(),
+        solana_sdk::signature::Keypair::new(),
+    );
+    let alice_account = client
+        .configure_account(&alice, &mint.mint)
+        .await
+        .unwrap()
+        .token_account;
+    let bob_account = client
+        .configure_account(&bob, &mint.mint)
+        .await
+        .unwrap()
+        .token_account;
+    mint.mint_to(&alice_account, 10).await;
+    client.deposit(&alice, &mint.mint, 10).await.unwrap();
+    client
+        .apply_pending_balance(&alice, &mint.mint)
+        .await
+        .unwrap();
+
+    // A process that prepared a transfer and stopped: three proof accounts stay open.
+    let keys = ConfidentialKeys::derive(&alice).unwrap();
+    let prepared = client
+        .prepare_transfer(&mint.mint, &alice_account, &keys, &bob_account, 5)
+        .await
+        .unwrap();
+    assert_eq!(proof_accounts_of(&rpc, &payer.pubkey()).await, 3);
+    let before = rpc.get_balance(&payer.pubkey()).await.unwrap();
+
+    let recovered = client.recover_proof_accounts().await.unwrap();
+    let mut closed = recovered.closed.clone();
+    closed.sort();
+    let mut expected = prepared.proof_accounts();
+    expected.sort();
+    assert_eq!(closed, expected);
+    assert!(recovered.left_open.is_empty());
+    assert!(
+        rpc.get_balance(&payer.pubkey()).await.unwrap() > before,
+        "the rent came back"
+    );
+    assert_eq!(proof_accounts_of(&rpc, &payer.pubkey()).await, 0);
+}
+
+fn code<T>(result: softseco_confidential_transfers::Result<T>) -> ErrorCode {
+    match result {
+        Ok(_) => panic!("expected an error"),
+        Err(e) => e.code(),
+    }
+}
+
+/// The data of the Token-2022 instruction starting with `prefix` in a transaction, and every
+/// program the transaction's instructions name (including accounts passed to them).
+async fn token_instruction(
+    rpc: &solana_client::nonblocking::rpc_client::RpcClient,
+    signature: &Signature,
+    prefix: [u8; 2],
+) -> (Vec<u8>, Vec<Pubkey>) {
+    use solana_client::rpc_config::{RpcTransactionConfig, UiTransactionEncoding};
+    let tx = rpc
+        .get_transaction_with_config(
+            signature,
+            RpcTransactionConfig {
+                encoding: Some(UiTransactionEncoding::Base64),
+                commitment: Some(rpc.commitment()),
+                max_supported_transaction_version: Some(0),
+            },
+        )
+        .await
+        .unwrap();
+    let tx = tx.transaction.transaction.decode().unwrap();
+    let keys = tx.message.static_account_keys();
+    let data = tx
+        .message
+        .instructions()
+        .iter()
+        .find(|ix| {
+            keys[usize::from(ix.program_id_index)]
+                == softseco_confidential_transfers::TOKEN_2022_PROGRAM_ID
+                && ix.data.starts_with(&prefix)
+        })
+        .expect("the instruction")
+        .data
+        .clone();
+    (data, keys.to_vec())
 }

@@ -245,20 +245,28 @@ transactions also take `computeUnitPrice` (priority fee, micro-lamports per comp
 
 ## Rust
 
-The core helpers (configure, deposit, apply, decrypt, transfer) and the auditor utilities are
-published as a Rust crate,
+The same operations, with the same keys, checks and error codes, are published as a Rust crate,
 [`softseco-confidential-transfers`](https://crates.io/crates/softseco-confidential-transfers)
-(2.0.0):
+(3.0.0):
 
 ```bash
 cargo add softseco-confidential-transfers
 ```
 
-Built on [`solana-zk-sdk`](https://crates.io/crates/solana-zk-sdk) and
-[`spl-token-client`](https://crates.io/crates/spl-token-client), with the same key derivation as
-the TypeScript SDK. The crate does not have `withdraw` yet, and its `transfer` does not resolve
-transfer-hook accounts, so it fails on mints with a transfer hook. See
-[`rust/README.md`](./rust/README.md).
+```rust
+let client = ConfidentialClient::new(rpc, Arc::new(payer));
+client.configure_account(&alice, &mint).await?;
+client.deposit(&alice, &mint, 1_000).await?;
+client.apply_pending_balance(&alice, &mint).await?;
+client.transfer(&alice, &mint, &bob, 400).await?;
+client.withdraw(&alice, &mint, 100).await?;
+```
+
+It handles transfer hooks, the mint's auditor key and failures partway like the TypeScript
+package, and also supports token accounts owned by a program:
+[`rust/examples/anchor-vault`](./rust/examples/anchor-vault) is an Anchor program that holds a
+confidential balance and pays out of it. The two SDKs are checked against
+[shared test vectors](./test-vectors). See [`rust/README.md`](./rust/README.md).
 
 ## Local development
 
@@ -285,12 +293,12 @@ full workflow.
 deposit, apply, transfer, withdraw, decrypt), transfer-hook mints and auditor selective
 disclosure, runs end-to-end on devnet, works in web apps with browser wallets, handles
 failures halfway through a transfer, and gives a mint's auditor a full report. Keys follow the ecosystem-standard
-`solana-conf-bal/v1` derivation, pinned by the same test vector in TypeScript and Rust. Changes
+`solana-conf-bal/v1` derivation, pinned by test vectors that TypeScript and Rust share. The Rust
+crate (3.0.0) has the same operations and also serves programs that hold confidential balances. Changes
 are tracked in [CHANGELOG.md](./CHANGELOG.md).
 
 Planned next:
 
-- `withdraw` and transfer-hook accounts in the Rust crate
 - An independent audit
 
 ## Security

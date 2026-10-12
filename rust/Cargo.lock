@@ -3171,13 +3171,23 @@ dependencies = [
 
 [[package]]
 name = "softseco-confidential-transfers"
-version = "2.0.0"
+version = "3.0.0"
 dependencies = [
+ "bs58",
+ "bytemuck",
+ "serde_json",
  "solana-client",
+ "solana-compute-budget-interface",
  "solana-sdk",
+ "solana-system-interface 3.2.0",
+ "solana-zk-elgamal-proof-interface",
  "solana-zk-sdk 7.0.1",
+ "solana-zk-sdk-pod",
+ "spl-associated-token-account-interface",
  "spl-token-2022",
+ "spl-token-2022-interface 3.1.1",
  "spl-token-client",
+ "spl-token-confidential-transfer-proof-extraction 0.6.1",
  "spl-token-confidential-transfer-proof-generation 0.6.1",
  "tokio",
 ]

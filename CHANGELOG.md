@@ -8,12 +8,68 @@ This repository holds the TypeScript package
 ([`@softseco/confidential-transfers`](https://www.npmjs.com/package/@softseco/confidential-transfers))
 and the Rust crate
 ([`softseco-confidential-transfers`](https://crates.io/crates/softseco-confidential-transfers)).
-Up to 2.0.0 they were released together under one version. Since 2.1.0 the TypeScript package is
-versioned on its own, and the Rust crate stays at 2.0.0 until it changes.
+Up to 2.0.0 they were released together under one version. Since 2.1.0 each has its own versions:
+the TypeScript package is tagged `vX.Y.Z`, the Rust crate `rust-vX.Y.Z` (its entries below are
+headed `rust-X.Y.Z`).
 
 ## [Unreleased]
 
-_Nothing yet._
+### Changed
+
+- `package.json` writes the `bin` path as npm normalizes it (`dist/cli.js`), so `npm publish` no
+  longer warns.
+
+### Tests
+
+- Shared test vectors with the Rust crate (`test-vectors/confidential-transfers.json`): key
+  derivation, the PDA-wallet seed, an auditor's transfer amount and an AES balance, checked by
+  both test suites.
+
+## [rust-3.0.0] - 2026-10-12
+
+The Rust crate catches up with the TypeScript SDK. Breaking: a client type replaces the free
+functions, which stay for now as deprecated wrappers.
+
+### Added
+
+- `ConfidentialClient` over an `Arc<RpcClient>` and a payer: `configure_account`, `deposit`,
+  `apply_pending_balance`, `decrypt_balance`, `transfer` and, new, **`withdraw`**.
+- **Transfer hooks.** `transfer` resolves the accounts a mint's hook needs and passes them along.
+  Tested with Sentinel as the hook, refusing and then allowing a confidential transfer.
+- **Cleanup when a transfer or withdraw fails partway**: the proof accounts created so far are
+  closed, and the error names the step and the accounts (`Error::step`, `Error::proof_accounts`).
+  `recover_proof_accounts()` closes any left by a process that stopped. On success the proof
+  accounts are closed in the transfer's own transaction.
+- **Checks before signing**, with the TypeScript SDK's error codes: `Error` and `ErrorCode`
+  (`ACCOUNT_NOT_FOUND`, `ACCOUNT_NOT_CONFIGURED`, `PENDING_BALANCE_LIMIT`, `INSUFFICIENT_FUNDS`,
+  `AMOUNT_TOO_LARGE`, `KEYS_MISMATCH`, ...). Every transaction is simulated first, so a failure
+  comes with the program logs.
+- Priority fees (`with_compute_unit_price`) and resending after an expired blockhash
+  (`with_max_retries`).
+- **Accounts owned by a program**: `ConfidentialKeys::derive_for_pda_wallet` and
+  `pda_wallet_public_seed` (the TypeScript SDK's convention), and `prepare_configure`,
+  `prepare_transfer`, `prepare_withdraw`, `pending_balance_update`, `transfer_hook_accounts`,
+  `close_proof_accounts`, so a program can make the Token-2022 calls through CPI.
+- `examples/anchor-vault`: an Anchor program that holds a confidential balance in a PDA-owned
+  account and pays out of it, through a transfer hook, with the mint's auditor reading each payout.
+  Tested on a local validator.
+- `ConfidentialKeys` (`derive`, `derive_with_seed`); key derivation now checks that the signature
+  verifies.
+
+### Changed
+
+- `transfer` reads the mint's auditor key itself; the 2.x `transfer` ignores its
+  `auditor_elgamal_pubkey` argument.
+- Errors are this crate's `Error` instead of `Box<dyn Error>`.
+- The 2.x free functions are deprecated wrappers over `ConfidentialClient`; `decimals` is read from
+  the mint.
+
+### Tests
+
+- On-chain tests (gated by `CT_LOCAL_PROGRAM=1`): the full flow with an auditor, a priority fee and
+  a withdraw; every check before signing; a transfer through Sentinel; recovery of proof accounts;
+  the Anchor example. The shared test vectors replace the single pinned vector. CI runs them on a
+  local validator with Token-2022 v11.1, Sentinel 2.1.0 and the example program.
 
 ## [3.3.0] - 2026-10-12
 
@@ -286,6 +342,7 @@ to that surface under semantic versioning.
   tests in CI. Published to npm.
 
 [Unreleased]: https://github.com/softseco/confidential-sdk/compare/v3.3.0...HEAD
+[rust-3.0.0]: https://github.com/softseco/confidential-sdk/releases/tag/rust-v3.0.0
 [3.3.0]: https://github.com/softseco/confidential-sdk/releases/tag/v3.3.0
 [3.2.0]: https://github.com/softseco/confidential-sdk/releases/tag/v3.2.0
 [3.1.0]: https://github.com/softseco/confidential-sdk/releases/tag/v3.1.0

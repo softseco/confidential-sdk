@@ -31,5 +31,15 @@ if [ -n "${TOKEN_2022_SO:-}" ]; then
   ARGS+=(--upgradeable-program "$TOKEN_2022" "$TOKEN_2022_SO" "$TOKEN_2022")
 fi
 
+# Optional extra programs for the Rust crate's on-chain tests:
+#   SENTINEL_SO            Sentinel, the transfer hook (test/fixtures/sentinel.so)
+#   CONFIDENTIAL_VAULT_SO  the Anchor example (rust/examples/anchor-vault)
+if [ -n "${SENTINEL_SO:-}" ]; then
+  ARGS+=(--bpf-program 5fH1jj6XeZC96jPCxKiSb2onAXcs7f4rMeqMmSsP6puD "$SENTINEL_SO")
+fi
+if [ -n "${CONFIDENTIAL_VAULT_SO:-}" ]; then
+  ARGS+=(--bpf-program DzaS2RboEYWKC1EvuPPnWpDbjJesPheCw3KV14qVvoPn "$CONFIDENTIAL_VAULT_SO")
+fi
+
 echo ">> Local validator with ZK ElGamal Proof Program ENABLED"
 exec solana-test-validator "${ARGS[@]}"

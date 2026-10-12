@@ -5,35 +5,46 @@
 //! every confidential transfer on that mint also encrypts the amount to the
 //! auditor, who can recover it here with their ElGamal secret key — without
 //! being able to spend, and without affecting anyone else's confidentiality.
-//! Mirrors the TypeScript SDK's auditor utilities.
+//! [`crate::ConfidentialClient::transfer`] reads the auditor key from the mint and encrypts every
+//! amount to it. Mirrors the TypeScript SDK's auditor utilities.
 use solana_sdk::signer::Signer;
-use solana_zk_sdk::encryption::{
-    derivation::derive_confidential_keys,
-    elgamal::{ElGamalCiphertext, ElGamalKeypair},
-};
+use solana_zk_sdk::encryption::elgamal::{ElGamalCiphertext, ElGamalKeypair};
+use spl_token_2022_interface::extension::confidential_transfer::PENDING_BALANCE_LO_BIT_LENGTH;
+
+use crate::error::{Error, ErrorCode, Result};
+use crate::keys::ConfidentialKeys;
 
 /// Derive the auditor's ElGamal keypair from its wallet signer: the ElGamal half
 /// of the wallet's standard confidential-balances keys. The key is
 /// mint-independent, so it is recoverable from the wallet alone and never stored.
-pub fn derive_auditor_keypair(
-    signer: &dyn Signer,
-) -> Result<ElGamalKeypair, Box<dyn std::error::Error>> {
-    Ok(derive_confidential_keys(signer, b"")?.0)
+/// The TypeScript SDK's `deriveAuditorElgamalKeypair` gives the same key.
+pub fn derive_auditor_keypair(signer: &dyn Signer) -> Result<ElGamalKeypair> {
+    Ok(ConfidentialKeys::derive(signer)?.elgamal)
 }
 
-/// Recover a confidential transfer's amount from its auditor ciphertext (the
-/// lo/hi halves), using the auditor's ElGamal secret key.
+/// Recover a confidential transfer's amount from its auditor ciphertexts (the
+/// lo and hi halves of the instruction), using the auditor's ElGamal secret key.
 pub fn decrypt_auditor_amount(
     auditor_keypair: &ElGamalKeypair,
     ciphertext_lo: &ElGamalCiphertext,
     ciphertext_hi: &ElGamalCiphertext,
-) -> Result<u64, Box<dyn std::error::Error>> {
+) -> Result<u64> {
+    let operation = "decrypt_auditor_amount";
     let secret = auditor_keypair.secret();
+    let fail = |half: &str| {
+        Error::new(
+            ErrorCode::DecryptionFailed,
+            operation,
+            format!(
+                "could not decrypt the {half} ciphertext; it is not encrypted to this auditor key"
+            ),
+        )
+    };
     let lo = secret
         .decrypt_u32(ciphertext_lo)
-        .ok_or("decrypt_auditor_amount: failed to decrypt the lo ciphertext")?;
+        .ok_or_else(|| fail("lo"))?;
     let hi = secret
         .decrypt_u32(ciphertext_hi)
-        .ok_or("decrypt_auditor_amount: failed to decrypt the hi ciphertext")?;
-    Ok(lo + (hi << 16))
+        .ok_or_else(|| fail("hi"))?;
+    Ok(lo + (hi << PENDING_BALANCE_LO_BIT_LENGTH))
 }
