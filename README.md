@@ -13,12 +13,11 @@ transfers without hand-assembling the primitives.
 
 A Rust crate with the core helpers lives in [`rust/`](#rust).
 
-> **Status: `v3.0.0`.** Built on `@solana/kit` 8. The whole flow (configure, deposit, apply,
+> **Status: `v3.0.1`.** Built on `@solana/kit` 8. The whole flow (configure, deposit, apply,
 > transfer, withdraw) runs end-to-end on **devnet** and against a local validator. The SDK is
 > self-audited, not independently audited. It runs on **Node ≥ 20.18** (servers, scripts,
-> backends). In a browser it needs one
-> bundler alias (`@solana/zk-sdk/node` to its web build); the [playground](./playground)
-> shows how. Confidential transfers depend on Solana's ZK ElGamal Proof Program: check that
+> backends). In a browser it needs one bundler alias (`@solana/zk-sdk/node` to its web build);
+> the [playground](./playground) shows how. Confidential transfers depend on Solana's ZK ElGamal Proof Program: check that
 > it is enabled on your target cluster (it is on devnet). Upgrading from 2.x means moving your app
 > to `@solana/kit` 8; see [CHANGELOG.md](./CHANGELOG.md).
 
@@ -222,7 +221,7 @@ tests run, which is what CI does. See [CONTRIBUTING.md](./CONTRIBUTING.md) for t
 
 ## Project status
 
-`v3.0.0`. The TypeScript package covers the full confidential-transfer lifecycle (configure,
+`v3.0.1`. The TypeScript package covers the full confidential-transfer lifecycle (configure,
 deposit, apply, transfer, withdraw, decrypt), transfer-hook mints and auditor selective
 disclosure, and runs end-to-end on devnet. Keys follow the ecosystem-standard
 `solana-conf-bal/v1` derivation, pinned by the same test vector in TypeScript and Rust. Changes
@@ -230,7 +229,7 @@ are tracked in [CHANGELOG.md](./CHANGELOG.md).
 
 Planned next:
 
-- A browser build (loading the web build of `@solana/zk-sdk`)
+- A browser build that needs no bundler alias, with key derivation through wallet `signMessage`
 - `withdraw` and transfer-hook accounts in the Rust crate
 - An independent audit
 

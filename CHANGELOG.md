@@ -15,6 +15,18 @@ versioned on its own, and the Rust crate stays at 2.0.0 until it changes.
 
 _Nothing yet._
 
+## [3.0.1] - 2026-10-12
+
+Documentation only. No code changes: the published `dist/` is built from the same source as 3.0.0.
+
+### Changed
+
+- The README on npm now links the [browser playground](https://softseco.github.io/confidential-sdk/),
+  which runs the whole flow on devnet in a browser tab.
+- The README explains how to use the SDK in a browser today (one bundler alias from
+  `@solana/zk-sdk/node` to its web build) instead of saying it does not run there.
+- The auditor example imports `transfer`, which it calls.
+
 ## [3.0.0] - 2026-09-28
 
 ### Changed
@@ -162,7 +174,8 @@ to that surface under semantic versioning.
 - Local-validator integration tests (gated behind `CT_LOCAL_PROGRAM=1`) and validator-free unit
   tests in CI. Published to npm.
 
-[Unreleased]: https://github.com/softseco/confidential-sdk/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/softseco/confidential-sdk/compare/v3.0.1...HEAD
+[3.0.1]: https://github.com/softseco/confidential-sdk/releases/tag/v3.0.1
 [3.0.0]: https://github.com/softseco/confidential-sdk/releases/tag/v3.0.0
 [2.1.0]: https://github.com/softseco/confidential-sdk/releases/tag/v2.1.0
 [2.0.0]: https://github.com/softseco/confidential-sdk/releases/tag/v2.0.0

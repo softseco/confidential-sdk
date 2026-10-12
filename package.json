@@ -1,6 +1,6 @@
 {
   "name": "@softseco/confidential-transfers",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "TypeScript SDK for Token-2022 confidential transfers on Solana: configure, deposit, apply, transfer, withdraw, decrypt.",
   "keywords": [
     "solana",
