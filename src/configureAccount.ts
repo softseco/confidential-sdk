@@ -7,7 +7,8 @@
 // extension, (3) configures it with the owner's ElGamal public key and an
 // encrypted zero balance, and (4) verifies the ZK pubkey-validity proof.
 // Encryption keys are derived deterministically from the owner's wallet signer
-// (see ./keys), so they are recoverable and never stored.
+// (see ./keys), so they are recoverable and never stored. Pass `keys` to reuse
+// keys derived earlier instead of asking the wallet to sign again.
 import {
   appendTransactionMessageInstructions,
   assertIsTransactionWithBlockhashLifetime,
@@ -20,7 +21,6 @@ import {
   setTransactionMessageLifetimeUsingBlockhash,
   signTransactionMessageWithSigners,
   type Address,
-  type MessagePartialSigner,
   type Rpc,
   type RpcSubscriptions,
   type Signature,
@@ -37,26 +37,43 @@ import {
   getReallocateInstruction,
 } from "@solana-program/token-2022";
 import { verifyPubkeyValidity } from "@solana-program/zk-elgamal-proof";
-import { PubkeyValidityProofData } from "@solana/zk-sdk/node";
+import { PubkeyValidityProofData } from "./internal/zk";
 
-import { deriveConfidentialKeys, type ConfidentialKeypairs } from "./keys";
+import type { ConfidentialKeypairs } from "./keys";
+import { ownerKeys } from "./internal/ownerKeys";
 
 /** Default cap on un-applied incoming confidential credits (2^16). */
 const DEFAULT_MAXIMUM_PENDING_BALANCE_CREDIT_COUNTER = 1n << 16n;
 
 export type ConfigureAccountInput = {
+  /** RPC client, e.g. `createSolanaRpc(url)`. */
   rpc: Rpc<SolanaRpcApi>;
+  /** Used to confirm the transaction(s). */
   rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
   /** Pays transaction fees and account rent. */
   payer: TransactionSigner;
-  /** The token-account owner. Signs key derivation and the configure instruction. */
-  owner: TransactionSigner & MessagePartialSigner;
+  /**
+   * The token-account owner. Signs the configure instruction, and also the key-derivation message
+   * unless `keys` is given (a keypair signer, or a wallet that supports signMessage).
+   */
+  owner: TransactionSigner;
+  /**
+   * The owner's keys from {@link deriveConfidentialKeys}, to configure the account without asking
+   * the wallet to sign the key message again.
+   */
+  keys?: ConfidentialKeypairs;
   /** A mint already configured for confidential transfers. */
   mint: Address;
+  /**
+   * How many incoming deposits and transfers the account accepts before `applyPendingBalance`
+   * must be called. Default: 65536.
+   */
   maximumPendingBalanceCreditCounter?: number | bigint;
+  /** Token program. Default: Token-2022. */
   programAddress?: Address;
 };
 
+/** The configured account, the keys it was configured with, and the transaction signature. */
 export type ConfigureAccountResult = ConfidentialKeypairs & {
   /** The configured associated token account. */
   token: Address;
@@ -64,13 +81,23 @@ export type ConfigureAccountResult = ConfidentialKeypairs & {
   signature: Signature;
 };
 
+/**
+ * Configure the owner's token account for confidential transfers, in one transaction: create the
+ * associated token account if needed, make room for the extension, set the owner's ElGamal key
+ * and an encrypted zero balance, and verify the pubkey-validity proof.
+ *
+ * @example
+ * ```ts
+ * const { token } = await configureAccount({ rpc, rpcSubscriptions, payer, owner: alice, mint });
+ * ```
+ */
 export async function configureAccount(
   input: ConfigureAccountInput,
 ): Promise<ConfigureAccountResult> {
   const programAddress = input.programAddress ?? TOKEN_2022_PROGRAM_ADDRESS;
 
-  // 1. Derive the account's encryption keys deterministically from the owner.
-  const { elgamalKeypair, aesKey } = await deriveConfidentialKeys({ signer: input.owner });
+  // 1. The account's encryption keys: given, or derived deterministically from the owner.
+  const { elgamalKeypair, aesKey } = await ownerKeys(input.owner, input.keys, "configureAccount");
 
   // 2. Resolve the owner's associated token account.
   const [token] = await findAssociatedTokenPda({

@@ -15,6 +15,47 @@ versioned on its own, and the Rust crate stays at 2.0.0 until it changes.
 
 _Nothing yet._
 
+## [3.1.0] - 2026-10-12
+
+Web apps. No breaking changes: code written for 3.0 works unchanged.
+
+### Added
+
+- **Browser build.** The package has a second build for browsers (`dist/browser`), selected by the
+  `browser` export condition, so Vite, webpack 5 and other bundlers use it with no alias. It loads
+  `@solana/zk-sdk`'s WebAssembly on first use. The bundler alias the 3.0.1 README described is no
+  longer needed.
+- `initConfidentialTransfers({ wasmUrl? })` starts loading the WebAssembly early, or loads it from
+  a URL you serve. In Node it does nothing.
+- **Browser wallets.** Key derivation accepts any kit `MessageSigner`, including the
+  `MessageModifyingSigner` that `@solana/wallet-account-signer` makes from a Wallet Standard
+  wallet. The signature is verified against the wallet's address, and a wallet that changes the
+  message is refused, since the keys would then differ from the standard ones. A signer that
+  cannot sign messages gets an error that says so.
+- **`keys` option** on `configureAccount`, `applyPendingBalance`, `decryptBalance`, `transfer` and
+  `withdraw`: pass the keys from `deriveConfidentialKeys` and the call does not ask the wallet to
+  sign again. A web app asks once per session.
+- Before decrypting or building a proof, `applyPendingBalance`, `decryptBalance`, `transfer` and
+  `withdraw` check that the keys match the account's ElGamal key, and fail with a clear error if
+  not.
+- `examples/vite`: a web app (connect a wallet, unlock, set up, deposit, apply, send, withdraw).
+- A guide for web apps (`guides/web-apps.md`) and an API reference generated with TypeDoc, at
+  https://softseco.github.io/confidential-sdk/api/.
+- CI runs the on-chain integration tests and a browser test on a local Agave 4.2 validator: the
+  Vite example in Chromium with a Wallet Standard test wallet, through the whole flow, on the
+  production build and the dev server. The Token-2022 build the tests need is in
+  `test/fixtures/` (v11.1.0, with its hash and how to rebuild it).
+
+### Changed
+
+- `owner` is typed `TransactionSigner` (was `TransactionSigner & MessagePartialSigner`), and
+  `decryptBalance`'s `owner` can also be a `MessageSigner`; whether the owner can sign messages is
+  checked when keys are needed. `deriveAuditorElgamalKeypair` and the `derive*` key functions take
+  a `MessageSigner`. Every value accepted before is still accepted.
+- `applyPendingBalance`, `decryptBalance`, `transfer` and `withdraw` read the account before
+  asking for the key signature, so a missing or unconfigured account fails before the wallet is
+  bothered.
+
 ## [3.0.1] - 2026-10-12
 
 Documentation only. No code changes: the published `dist/` is built from the same source as 3.0.0.
@@ -174,7 +215,8 @@ to that surface under semantic versioning.
 - Local-validator integration tests (gated behind `CT_LOCAL_PROGRAM=1`) and validator-free unit
   tests in CI. Published to npm.
 
-[Unreleased]: https://github.com/softseco/confidential-sdk/compare/v3.0.1...HEAD
+[Unreleased]: https://github.com/softseco/confidential-sdk/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/softseco/confidential-sdk/releases/tag/v3.1.0
 [3.0.1]: https://github.com/softseco/confidential-sdk/releases/tag/v3.0.1
 [3.0.0]: https://github.com/softseco/confidential-sdk/releases/tag/v3.0.0
 [2.1.0]: https://github.com/softseco/confidential-sdk/releases/tag/v2.1.0

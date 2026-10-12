@@ -5,9 +5,10 @@
 //
 // The upstream helper is published only against the `bundler` build of
 // @solana/zk-sdk, whose JS `require()`s its .wasm and therefore cannot be loaded
-// under Node/tsx. This copy imports the identical API from `@solana/zk-sdk/node`
-// (which loads its WASM via fs), so the SDK runs natively on Node with no shim.
-// The proof math and on-chain layout are unchanged.
+// under Node/tsx. This copy imports the identical API from ./zk, which is the
+// Node build of @solana/zk-sdk here and its web build in the browser build of
+// this package, so the SDK runs in both with no shim. The proof math and on-chain
+// layout are unchanged.
 import {
   type AccountRole,
   generateKeyPairSigner,
@@ -49,7 +50,7 @@ import {
   GroupedElGamalCiphertext3Handles,
   PedersenCommitment,
   PedersenOpening,
-} from "@solana/zk-sdk/node";
+} from "./zk";
 
 import {
   extractCiphertextFromGroupedBytes,

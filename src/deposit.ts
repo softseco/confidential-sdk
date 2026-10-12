@@ -31,8 +31,11 @@ import {
 } from "@solana-program/token-2022";
 
 export type DepositInput = {
+  /** RPC client, e.g. `createSolanaRpc(url)`. */
   rpc: Rpc<SolanaRpcApi>;
+  /** Used to confirm the transaction(s). */
   rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
+  /** Pays the transaction fee. */
   payer: TransactionSigner;
   /** Owner of the token account (signs the deposit). */
   owner: TransactionSigner;
@@ -44,6 +47,7 @@ export type DepositInput = {
   decimals: number;
   /** Token account to deposit into (defaults to the owner's ATA). */
   token?: Address;
+  /** Token program. Default: Token-2022. */
   programAddress?: Address;
 };
 
@@ -52,6 +56,11 @@ export type DepositResult = {
   signature: Signature;
 };
 
+/**
+ * Move tokens from the account's public balance into its confidential pending balance. No proof
+ * and no keys are needed; the amount is public in this step. Call {@link applyPendingBalance}
+ * afterwards to make it spendable.
+ */
 export async function deposit(input: DepositInput): Promise<DepositResult> {
   const programAddress = input.programAddress ?? TOKEN_2022_PROGRAM_ADDRESS;
   const token =

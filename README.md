@@ -13,13 +13,15 @@ transfers without hand-assembling the primitives.
 
 A Rust crate with the core helpers lives in [`rust/`](#rust).
 
-> **Status: `v3.0.1`.** Built on `@solana/kit` 8. The whole flow (configure, deposit, apply,
-> transfer, withdraw) runs end-to-end on **devnet** and against a local validator. The SDK is
-> self-audited, not independently audited. It runs on **Node ≥ 20.18** (servers, scripts,
-> backends). In a browser it needs one bundler alias (`@solana/zk-sdk/node` to its web build);
-> the [playground](./playground) shows how. Confidential transfers depend on Solana's ZK ElGamal Proof Program: check that
-> it is enabled on your target cluster (it is on devnet). Upgrading from 2.x means moving your app
-> to `@solana/kit` 8; see [CHANGELOG.md](./CHANGELOG.md).
+> **Status: `v3.1.0`.** Built on `@solana/kit` 8. The whole flow (configure, deposit, apply,
+> transfer, withdraw) runs end-to-end on **devnet** and against a local validator, in Node and in
+> the browser. The SDK is self-audited, not independently audited. It runs on **Node ≥ 20.18**
+> and in web apps: bundlers pick the browser build by themselves, and keys come from the user's
+> wallet ([web apps guide](./guides/web-apps.md)). Confidential transfers depend on Solana's ZK
+> ElGamal Proof Program: check that it is enabled on your target cluster (it is on devnet).
+> Upgrading from 2.x means moving your app to `@solana/kit` 8; see [CHANGELOG.md](./CHANGELOG.md).
+>
+> **API reference:** [softseco.github.io/confidential-sdk/api](https://softseco.github.io/confidential-sdk/api/)
 
 ## Try it in your browser
 
@@ -118,6 +120,28 @@ Runnable round trips: [`examples/devnet.ts`](./examples/devnet.ts) (`npm run exa
 [`examples/confidential-transfer.ts`](./examples/confidential-transfer.ts) (`npm run example`,
 against a local validator, see [Local development](#local-development)).
 
+### In a web app
+
+Bundlers (Vite, webpack 5 and others that honour the `browser` export condition) use the browser
+build with no configuration beyond one Vite dev-server line. Keys come from the user's wallet:
+ask it to sign once, then pass the keys to every call so it is not asked again.
+
+```ts
+import { isMessageSigner } from "@solana/kit";
+import { createSignerFromWalletAccount } from "@solana/wallet-account-signer";
+import { deriveConfidentialKeys, transfer } from "@softseco/confidential-transfers";
+
+const signer = createSignerFromWalletAccount(walletAccount, "solana:devnet");
+if (!isMessageSigner(signer)) throw new Error("This wallet cannot sign messages");
+const keys = await deriveConfidentialKeys({ signer }); // one "sign message" prompt
+
+await transfer({ rpc, rpcSubscriptions, payer: signer, owner: signer, mint, destinationOwner, amount, keys });
+```
+
+The [web apps guide](./guides/web-apps.md) covers loading the WebAssembly, wallet requirements
+and what the user approves. [`examples/vite`](./examples/vite) is a complete app (connect, unlock,
+deposit, apply, send, withdraw), and CI runs it in Chromium with a test wallet on every push.
+
 ### Transfer hooks
 
 Token-2022 calls a mint's transfer hook on confidential transfers too, with the amount set to
@@ -170,9 +194,12 @@ const amount = await decryptTransferAmountAsAuditor({ rpc, signature, auditorKey
 | `deriveConfidentialKeys` | The wallet's standard ElGamal + AES keys, from one signature | `signer` → `{ elgamalKeypair, aesKey }` |
 | `deriveConfidentialKeysWithSeed` | Seed-scoped, non-standard derivation | `signer`, `publicSeed` → `{ elgamalKeypair, aesKey }` |
 | `pdaWalletPublicSeed` | Canonical seed for single-signer PDA wallets | `programId`, `walletPda`, `mint`, `tokenAccount` → `Uint8Array` |
+| `initConfidentialTransfers` | Start loading the WebAssembly early (browser; no-op in Node) | optional `wasmUrl` |
 
-Every function accepts an optional `programAddress` (defaults to Token-2022) and derives the
-owner's ElGamal/AES keys from the `owner` signer, so no key storage is required.
+Every function accepts an optional `programAddress` (defaults to Token-2022). Functions that need
+the owner's ElGamal/AES keys derive them from the `owner` signer, so no key storage is required,
+or take them as `keys` (from `deriveConfidentialKeys`) to skip the signature. Full reference:
+[softseco.github.io/confidential-sdk/api](https://softseco.github.io/confidential-sdk/api/).
 
 > **Upgrading from 2.x.** Move your app to `@solana/kit` 8. Function signatures and key
 > derivation are unchanged, so accounts configured with 2.x keep working.
@@ -202,34 +229,33 @@ transfer-hook accounts, so it fails on mints with a transfer hook. See
 
 Confidential-transfer instructions require an on-chain Token-2022 program that **matches the
 client**, plus the ZK ElGamal Proof Program. The on-chain tests and the local example therefore
-run against a local validator:
+run against a local validator from **Agave 4.x**, with the Token-2022 build in
+[`test/fixtures`](./test/fixtures):
 
 ```bash
-# 1. build a Token-2022 program matching the @solana-program/token-2022 client
-cargo build-sbf --manifest-path <token-2022-source>/program/Cargo.toml
+# 1. start the validator with that Token-2022 loaded (leave running)
+TOKEN_2022_SO=test/fixtures/spl_token_2022.so npm run validator
 
-# 2. start the validator with that program loaded (leave running)
-TOKEN_2022_SO=$(find <token-2022-source> -name 'spl_token_2022.so' -path '*deploy*' | head -1) \
-  npm run validator
-
-# 3. in another terminal, run the on-chain integration tests
+# 2. in another terminal, run the on-chain integration tests
 CT_LOCAL_PROGRAM=1 npm test
 ```
 
 Without `CT_LOCAL_PROGRAM=1` the on-chain tests are skipped and only the validator-free unit
-tests run, which is what CI does. See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full workflow.
+tests run. CI runs both, plus the browser test. See [CONTRIBUTING.md](./CONTRIBUTING.md) for the
+full workflow.
 
 ## Project status
 
-`v3.0.1`. The TypeScript package covers the full confidential-transfer lifecycle (configure,
+`v3.1.0`. The TypeScript package covers the full confidential-transfer lifecycle (configure,
 deposit, apply, transfer, withdraw, decrypt), transfer-hook mints and auditor selective
-disclosure, and runs end-to-end on devnet. Keys follow the ecosystem-standard
+disclosure, runs end-to-end on devnet, and works in web apps with browser wallets. Keys follow the ecosystem-standard
 `solana-conf-bal/v1` derivation, pinned by the same test vector in TypeScript and Rust. Changes
 are tracked in [CHANGELOG.md](./CHANGELOG.md).
 
 Planned next:
 
-- A browser build that needs no bundler alias, with key derivation through wallet `signMessage`
+- 3.2: one wallet prompt for a whole transfer, picking up after a failed step, priority fees and
+  typed errors
 - `withdraw` and transfer-hook accounts in the Rust crate
 - An independent audit
 

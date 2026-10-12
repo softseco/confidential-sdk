@@ -48,6 +48,7 @@ describe("public API", () => {
       "deriveAeKey",
       "getElGamalPubkeyAddress",
       "pdaWalletPublicSeed",
+      "initConfidentialTransfers",
     ];
     for (const name of names) {
       expect(sdk, `missing export: ${name}`)

@@ -19,11 +19,14 @@ import {
   createSignableMessage,
   getAddressDecoder,
   getAddressEncoder,
+  isMessageModifyingSigner,
+  isMessagePartialSigner,
   type Address,
-  type MessagePartialSigner,
+  type MessageSigner,
   type ReadonlyUint8Array,
 } from "@solana/kit";
-import { AeKey, ConfidentialKeys, ElGamalKeypair } from "@solana/zk-sdk/node";
+import { ed25519 } from "@noble/curves/ed25519";
+import { AeKey, ConfidentialKeys, ElGamalKeypair, assertZkReady, ensureZk } from "./internal/zk";
 
 /** Public ElGamal key (as an Address) plus the 32-byte ElGamal secret key. */
 export type DerivedElGamalKeypair = Readonly<{
@@ -37,22 +40,52 @@ export type ConfidentialKeypairs = Readonly<{
   aesKey: AeKey;
 }>;
 
-async function signDerivationMessage(
-  signer: MessagePartialSigner,
-  message: Uint8Array,
-): Promise<Uint8Array> {
-  const [signatures] = await signer.signMessages([createSignableMessage(message)]);
-  const signature = signatures?.[signer.address];
+async function signDerivationMessage(signer: MessageSigner, message: Uint8Array): Promise<Uint8Array> {
+  const signable = createSignableMessage(message);
+  let signed;
+  if (isMessagePartialSigner(signer)) {
+    [signed] = await signer.signMessages([signable]);
+  } else if (isMessageModifyingSigner(signer)) {
+    // A browser wallet (Wallet Standard `solana:signMessage`) signs through this interface. The
+    // keys come from the signature over this exact message, so a changed message is an error.
+    const [modified] = await signer.modifyAndSignMessages([signable]);
+    if (!sameBytes(modified?.content, message)) {
+      throw new Error(
+        `Wallet ${signer.address} changed the message it was asked to sign, so the confidential ` +
+          "keys would not match the standard derivation. Use a wallet that signs messages as given.",
+      );
+    }
+    signed = modified.signatures;
+  } else {
+    throw new Error(
+      `Signer ${(signer as { address?: string }).address} cannot sign messages, and the ` +
+        "confidential keys come from a message signature. With a browser wallet, use one that " +
+        "supports signMessage (Wallet Standard `solana:signMessage`).",
+    );
+  }
+  const signature = (signed as Record<string, Uint8Array | undefined> | undefined)?.[signer.address];
   if (signature == null) {
     throw new Error(`Signer ${signer.address} did not return a signature`);
+  }
+  // Keys from a signature that does not verify would be keys nobody can derive again.
+  const publicKey = new Uint8Array(getAddressEncoder().encode(signer.address));
+  if (!ed25519.verify(new Uint8Array(signature), message, publicKey)) {
+    throw new Error(`Signer ${signer.address} returned a signature that does not verify against its address`);
   }
   return new Uint8Array(signature);
 }
 
+function sameBytes(a: ReadonlyUint8Array | undefined, b: Uint8Array): boolean {
+  if (!a || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
 async function confidentialKeysFrom(
-  signer: MessagePartialSigner,
+  signer: MessageSigner,
   message: Uint8Array,
 ): Promise<ConfidentialKeypairs> {
+  await ensureZk();
   const keys = ConfidentialKeys.fromSignature(await signDerivationMessage(signer, message));
   return { elgamalKeypair: keys.elgamal(), aesKey: keys.ae() };
 }
@@ -66,8 +99,9 @@ async function confidentialKeysFrom(
  * by the spl-token CLI and by wallets that implement the standard.
  */
 export async function deriveConfidentialKeys(input: {
-  signer: MessagePartialSigner;
+  signer: MessageSigner;
 }): Promise<ConfidentialKeypairs> {
+  await ensureZk();
   return confidentialKeysFrom(input.signer, ConfidentialKeys.signerMessage());
 }
 
@@ -81,9 +115,10 @@ export async function deriveConfidentialKeys(input: {
  * {@link pdaWalletPublicSeed}) or custom application keying.
  */
 export async function deriveConfidentialKeysWithSeed(input: {
-  signer: MessagePartialSigner;
+  signer: MessageSigner;
   publicSeed: ReadonlyUint8Array;
 }): Promise<ConfidentialKeypairs> {
+  await ensureZk();
   return confidentialKeysFrom(
     input.signer,
     ConfidentialKeys.signerMessageWithSeed(new Uint8Array(input.publicSeed)),
@@ -102,6 +137,7 @@ export function pdaWalletPublicSeed(input: {
   mint: Address;
   tokenAccount: Address;
 }): Uint8Array {
+  assertZkReady("pdaWalletPublicSeed");
   const encode = (address: Address) => new Uint8Array(getAddressEncoder().encode(address));
   return ConfidentialKeys.pdaWalletPublicSeed(
     encode(input.programId),
@@ -113,6 +149,7 @@ export function pdaWalletPublicSeed(input: {
 
 /** An ElGamal public key as an Address, ready for a mint or account config. */
 export function getElGamalPubkeyAddress(keypair: ElGamalKeypair): Address {
+  assertZkReady("getElGamalPubkeyAddress");
   return getAddressDecoder().decode(new Uint8Array(keypair.pubkey().toBytes()));
 }
 
@@ -122,7 +159,7 @@ export function getElGamalPubkeyAddress(keypair: ElGamalKeypair): Address {
  * asks the wallet for one signature instead of two.
  */
 export async function deriveElGamalKeypair(input: {
-  signer: MessagePartialSigner;
+  signer: MessageSigner;
 }): Promise<DerivedElGamalKeypair> {
   const { elgamalKeypair } = await deriveConfidentialKeys(input);
   return {
@@ -135,7 +172,7 @@ export async function deriveElGamalKeypair(input: {
  * The AES half of the standard derivation, as raw bytes. Prefer
  * {@link deriveConfidentialKeys} when you need both keys.
  */
-export async function deriveAeKey(input: { signer: MessagePartialSigner }): Promise<Uint8Array> {
+export async function deriveAeKey(input: { signer: MessageSigner }): Promise<Uint8Array> {
   const { aesKey } = await deriveConfidentialKeys(input);
   return new Uint8Array(aesKey.toBytes());
 }

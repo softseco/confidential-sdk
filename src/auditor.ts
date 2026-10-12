@@ -12,7 +12,7 @@ import {
   getAddressDecoder,
   getBase58Encoder,
   type Address,
-  type MessagePartialSigner,
+  type MessageSigner,
   type Rpc,
   type Signature,
   type SolanaRpcApi,
@@ -21,7 +21,7 @@ import {
   TOKEN_2022_PROGRAM_ADDRESS,
   getConfidentialTransferInstructionDataDecoder,
 } from "@solana-program/token-2022";
-import { ElGamalCiphertext, ElGamalKeypair } from "@solana/zk-sdk/node";
+import { ElGamalCiphertext, ElGamalKeypair, assertZkReady, ensureZk } from "./internal/zk";
 
 import { deriveConfidentialKeys } from "./keys";
 
@@ -37,15 +37,14 @@ const CONFIDENTIAL_TRANSFER_INNER_DISCRIMINATOR = 7;
  * mint-independent (one auditor identity can audit any mint that designates it),
  * so it is recoverable from the wallet alone and never needs to be stored.
  */
-export async function deriveAuditorElgamalKeypair(
-  signer: MessagePartialSigner,
-): Promise<ElGamalKeypair> {
+export async function deriveAuditorElgamalKeypair(signer: MessageSigner): Promise<ElGamalKeypair> {
   const { elgamalKeypair } = await deriveConfidentialKeys({ signer });
   return elgamalKeypair;
 }
 
 /** The auditor's ElGamal public key as an Address, for a mint's confidential-transfer config. */
 export function getAuditorElgamalPubkey(auditorKeypair: ElGamalKeypair): Address {
+  assertZkReady("getAuditorElgamalPubkey");
   return getAddressDecoder().decode(new Uint8Array(auditorKeypair.pubkey().toBytes()));
 }
 
@@ -75,6 +74,7 @@ type FetchedTransactionMessage = {
 export async function decryptTransferAmountAsAuditor(
   input: DecryptTransferAmountAsAuditorInput,
 ): Promise<bigint> {
+  await ensureZk();
   const programAddress = input.programAddress ?? TOKEN_2022_PROGRAM_ADDRESS;
   const result = await input.rpc
     .getTransaction(input.signature, {

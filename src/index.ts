@@ -1,6 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Confidential Transfers SDK — public API.
+
+/**
+ * TypeScript SDK for Token-2022 confidential transfers on Solana, built on `@solana/kit` 8.
+ * Encrypted balances and amounts, in a handful of async functions: {@link configureAccount},
+ * {@link deposit}, {@link applyPendingBalance}, {@link transfer}, {@link withdraw} and
+ * {@link decryptBalance}. Runs in Node and, since 3.1.0, in the browser (see the Web apps guide).
+ *
+ * ```ts
+ * const { token } = await configureAccount({ rpc, rpcSubscriptions, payer, owner: alice, mint });
+ * await deposit({ rpc, rpcSubscriptions, payer, owner: alice, mint, amount: 1000n, decimals });
+ * await applyPendingBalance({ rpc, rpcSubscriptions, payer, owner: alice, mint });
+ * await transfer({ rpc, rpcSubscriptions, payer, owner: alice, mint, destinationOwner: bob.address, amount: 600n });
+ * const balance = await decryptBalance({ rpc, owner: alice, mint }); // 400n
+ * ```
+ *
+ * Self-audited, not independently audited.
+ *
+ * @packageDocumentation
+ * @document ../guides/web-apps.md
+ */
+export { initConfidentialTransfers } from "./internal/zk";
+export type { InitConfidentialTransfersOptions } from "./internal/zk";
 export { configureAccount } from "./configureAccount";
 export type { ConfigureAccountInput, ConfigureAccountResult } from "./configureAccount";
 export { deposit } from "./deposit";

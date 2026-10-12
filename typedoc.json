@@ -1,0 +1,26 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": [
+    "src/index.ts"
+  ],
+  "out": "docs/api",
+  "name": "@softseco/confidential-transfers",
+  "includeVersion": true,
+  "readme": "none",
+  "excludePrivate": true,
+  "excludeInternal": true,
+  "gitRevision": "v3.1.0",
+  "sourceLinkTemplate": "https://github.com/softseco/confidential-sdk/blob/{gitRevision}/{path}#L{line}",
+  "navigationLinks": {
+    "GitHub": "https://github.com/softseco/confidential-sdk",
+    "npm": "https://www.npmjs.com/package/@softseco/confidential-transfers",
+    "Playground": "https://softseco.github.io/confidential-sdk/"
+  },
+  "treatWarningsAsErrors": true,
+  "groupOrder": [
+    "Documents",
+    "Functions",
+    "Type Aliases",
+    "*"
+  ]
+}

@@ -4,7 +4,8 @@
 // AVAILABLE balance. The pending balance (ElGamal-encrypted) is decrypted locally
 // with the owner's ElGamal secret key, added to the current available balance,
 // and the new available balance is re-encrypted (AES) into the account's
-// decryptable balance. Keys are derived from the owner's wallet signer.
+// decryptable balance. Keys are derived from the owner's wallet signer, or passed
+// in as `keys`.
 import {
   appendTransactionMessageInstructions,
   assertIsTransactionWithBlockhashLifetime,
@@ -18,7 +19,6 @@ import {
   setTransactionMessageLifetimeUsingBlockhash,
   signTransactionMessageWithSigners,
   type Address,
-  type MessagePartialSigner,
   type ReadonlyUint8Array,
   type Rpc,
   type RpcSubscriptions,
@@ -33,24 +33,38 @@ import {
   findAssociatedTokenPda,
   getApplyConfidentialPendingBalanceInstruction,
 } from "@solana-program/token-2022";
-import { AeCiphertext, ElGamalCiphertext } from "@solana/zk-sdk/node";
+import { AeCiphertext, ElGamalCiphertext } from "./internal/zk";
 
-import { deriveConfidentialKeys } from "./keys";
+import type { ConfidentialKeypairs } from "./keys";
+import { assertKeysMatchAccount, ownerKeys } from "./internal/ownerKeys";
 
 const PENDING_BALANCE_LO_BIT_LENGTH = 16n;
 
 export type ApplyPendingBalanceInput = {
+  /** RPC client, e.g. `createSolanaRpc(url)`. */
   rpc: Rpc<SolanaRpcApi>;
+  /** Used to confirm the transaction(s). */
   rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
+  /** Pays the transaction fee. */
   payer: TransactionSigner;
-  owner: TransactionSigner & MessagePartialSigner;
+  /** Signs the instruction, and the key-derivation message unless `keys` is given. */
+  owner: TransactionSigner;
   mint: Address;
+  /** Token account (defaults to the owner's ATA). */
   token?: Address;
+  /** The owner's keys from {@link deriveConfidentialKeys}; skips the message signature. */
+  keys?: ConfidentialKeypairs;
+  /** Token program. Default: Token-2022. */
   programAddress?: Address;
 };
 
 export type ApplyPendingBalanceResult = { token: Address; signature: Signature };
 
+/**
+ * Move the incoming (pending) confidential balance into the available balance, which can be
+ * transferred or withdrawn. Decrypts the pending amounts locally and writes the new available
+ * balance, encrypted, in one transaction.
+ */
 export async function applyPendingBalance(
   input: ApplyPendingBalanceInput,
 ): Promise<ApplyPendingBalanceResult> {
@@ -65,9 +79,6 @@ export async function applyPendingBalance(
       })
     )[0];
 
-  const { elgamalKeypair, aesKey } = await deriveConfidentialKeys({ signer: input.owner });
-  const elgamalSecretKey = elgamalKeypair.secret();
-
   const { data } = await fetchToken(input.rpc, token);
   if (!isSome(data.extensions)) {
     throw new Error("token account is not configured for confidential transfers");
@@ -76,6 +87,11 @@ export async function applyPendingBalance(
   if (!ct) {
     throw new Error("token account is missing the ConfidentialTransferAccount extension");
   }
+
+  const keys = await ownerKeys(input.owner, input.keys, "applyPendingBalance");
+  assertKeysMatchAccount(keys, data, token, "applyPendingBalance");
+  const { elgamalKeypair, aesKey } = keys;
+  const elgamalSecretKey = elgamalKeypair.secret();
 
   const parseElGamal = (bytes: ReadonlyUint8Array) => {
     const c = ElGamalCiphertext.fromBytes(new Uint8Array(bytes as Uint8Array));

@@ -10,38 +10,50 @@ packages, versioned separately since 2.1.0:
 
 - **Node ≥ 20.18** and npm (for the TypeScript package)
 - **Rust** (stable) with `rustfmt` and `clippy` (for the crate)
-- For on-chain tests: the Solana CLI/`solana-test-validator`, a client-matching Token-2022 build,
-  and the ZK ElGamal Proof Program (see [Local development](#on-chain-tests))
+- For on-chain and browser tests: the Solana CLI with `solana-test-validator` from **Agave 4.x**
+  (see [On-chain tests](#on-chain-tests))
 
 ## TypeScript
 
 ```bash
 npm install
-npm run typecheck        # tsc --noEmit, for src/ and examples/
-npm run build            # tsup + type declarations
-npm test                 # validator-free unit tests (what CI runs)
+npm run typecheck        # tsc --noEmit, for src/, examples/ and the browser test
+npm run build            # Node build, browser build (dist/browser) and type declarations
+npm test                 # unit tests; on-chain tests are skipped without a validator
 npm run coverage         # unit tests with coverage
 npm run example:devnet   # full round trip on devnet, paid from your Solana CLI wallet
+npm run docs:api         # regenerate the API reference in docs/api (TypeDoc)
 ```
 
 ### On-chain tests
 
-The confidential-transfer instructions need a local validator running the ZK ElGamal Proof Program
-plus a Token-2022 build that matches the `@solana-program/token-2022` client:
+The confidential-transfer instructions need a local validator from Agave 4.x (older releases
+reject the proofs `@solana/zk-sdk` makes today) and a Token-2022 build that matches the
+`@solana-program/token-2022` client. That build is in `test/fixtures/` (see its README):
 
 ```bash
-# 1. build a matching Token-2022 program
-cargo build-sbf --manifest-path <token-2022-source>/program/Cargo.toml
+# 1. start the validator with that Token-2022 (leave running)
+TOKEN_2022_SO=test/fixtures/spl_token_2022.so npm run validator
 
-# 2. start the validator with that program (leave running)
-TOKEN_2022_SO=$(find <token-2022-source> -name 'spl_token_2022.so' -path '*deploy*' | head -1) \
-  npm run validator
-
-# 3. run the integration tests against it
+# 2. run the integration tests against it
 CT_LOCAL_PROGRAM=1 npm test
 ```
 
 Without `CT_LOCAL_PROGRAM=1`, on-chain tests are skipped and only unit tests run.
+
+### Browser test
+
+`test/browser/e2e.ts` runs the Vite example in Chromium with a Wallet Standard test wallet against
+the same validator. With the validator running:
+
+```bash
+npm run build
+(cd examples/vite && npm ci && VITE_RPC_URL=http://127.0.0.1:8899 VITE_CHAIN=solana:localnet npx vite build)
+npx playwright-core install chromium      # once; or set CHROMIUM_PATH to a Chrome you have
+npm run test:browser
+```
+
+On failure it saves a screenshot in `test/browser/artifacts/`.
 
 ## Rust
 
@@ -66,7 +78,8 @@ Keep `Cargo.lock` committed and in sync when changing dependencies.
 - Before pushing: unit tests pass, `tsc` is clean, and (for Rust) `fmt`/`clippy` are clean. CI runs
   all of these.
 - Update [CHANGELOG.md](./CHANGELOG.md) under an `Unreleased` heading, and the docs if you change
-  the public API.
+  the public API. For a release, set `gitRevision` in `typedoc.json` to the new tag and run
+  `npm run docs:api`.
 - Keep commits focused and messages descriptive.
 
 ## Reporting security issues

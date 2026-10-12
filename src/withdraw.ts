@@ -9,7 +9,6 @@
 // first: only the available balance can be withdrawn.
 import {
   type Address,
-  type MessagePartialSigner,
   type Rpc,
   type RpcSubscriptions,
   type Signature,
@@ -22,16 +21,20 @@ import {
   fetchToken,
   findAssociatedTokenPda,
 } from "@solana-program/token-2022";
-import { deriveConfidentialKeys } from "./keys";
+import type { ConfidentialKeypairs } from "./keys";
+import { assertKeysMatchAccount, ownerKeys } from "./internal/ownerKeys";
 import { getConfidentialWithdrawInstructionPlan } from "./internal/confidentialTransferProof";
 import { executeInstructionPlan } from "./internal/executePlan";
 
 export type WithdrawInput = {
+  /** RPC client, e.g. `createSolanaRpc(url)`. */
   rpc: Rpc<SolanaRpcApi>;
+  /** Used to confirm the transaction(s). */
   rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
+  /** Pays the transaction fees and the rent of the proof accounts (refunded when they close). */
   payer: TransactionSigner;
-  /** Owner of the token account: the withdraw authority and the key source. */
-  owner: TransactionSigner & MessagePartialSigner;
+  /** Owner of the token account: the withdraw authority, and the key source unless `keys` is given. */
+  owner: TransactionSigner;
   /** Mint configured for confidential transfers. */
   mint: Address;
   /** Amount (base units) to move from the confidential available balance to the public balance. */
@@ -40,6 +43,9 @@ export type WithdrawInput = {
   decimals: number;
   /** Token account to withdraw from (defaults to the owner's ATA). */
   token?: Address;
+  /** The owner's keys from {@link deriveConfidentialKeys}; skips the message signature. */
+  keys?: ConfidentialKeypairs;
+  /** Token program. Default: Token-2022. */
   programAddress?: Address;
 };
 
@@ -48,6 +54,11 @@ export type WithdrawResult = {
   signatures: Signature[];
 };
 
+/**
+ * Move tokens from the confidential available balance back to the public balance of the same
+ * account. The withdrawn amount is public; the remaining balance stays encrypted. Builds two
+ * proofs, verifies them into proof accounts, withdraws and closes the proof accounts.
+ */
 export async function withdraw(input: WithdrawInput): Promise<WithdrawResult> {
   const programAddress = input.programAddress ?? TOKEN_2022_PROGRAM_ADDRESS;
   const amount = BigInt(input.amount);
@@ -65,8 +76,10 @@ export async function withdraw(input: WithdrawInput): Promise<WithdrawResult> {
       })
     )[0];
 
-  const { elgamalKeypair, aesKey } = await deriveConfidentialKeys({ signer: input.owner });
   const { data: tokenAccount } = await fetchToken(input.rpc, token);
+  const keys = await ownerKeys(input.owner, input.keys, "withdraw");
+  assertKeysMatchAccount(keys, tokenAccount, token, "withdraw");
+  const { elgamalKeypair, aesKey } = keys;
 
   const instructionPlan = await getConfidentialWithdrawInstructionPlan({
     payer: input.payer,

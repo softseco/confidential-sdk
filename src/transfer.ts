@@ -9,7 +9,6 @@
 // as a sequence of transactions (see internal/executePlan.ts).
 import {
   type Address,
-  type MessagePartialSigner,
   type Rpc,
   type RpcSubscriptions,
   type Signature,
@@ -22,24 +21,37 @@ import {
   fetchToken,
   findAssociatedTokenPda,
 } from "@solana-program/token-2022";
-import { deriveConfidentialKeys } from "./keys";
+import type { ConfidentialKeypairs } from "./keys";
+import { assertKeysMatchAccount, ownerKeys } from "./internal/ownerKeys";
 import { getConfidentialTransferInstructionPlan } from "./internal/confidentialTransferProof";
 import { executeInstructionPlan } from "./internal/executePlan";
 import { resolveTransferHookAccounts } from "./internal/transferHook";
 
 export type TransferInput = {
+  /** RPC client, e.g. `createSolanaRpc(url)`. */
   rpc: Rpc<SolanaRpcApi>;
+  /** Used to confirm the transaction(s). */
   rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
+  /** Pays the transaction fees and the rent of the proof accounts (refunded when they close). */
   payer: TransactionSigner;
-  /** Source account owner — also the transfer authority and the key source. */
-  owner: TransactionSigner & MessagePartialSigner;
+  /**
+   * Source account owner: the transfer authority, and the key source unless `keys` is given.
+   */
+  owner: TransactionSigner;
   mint: Address;
   /** Owner of the destination account; used to derive its ATA when no token is given. */
   destinationOwner?: Address;
+  /** Amount in base units. Up to 2^48 - 1 per transfer. */
   amount: bigint;
+  /** Source token account (defaults to the owner's ATA). */
   sourceToken?: Address;
+  /** Destination token account; must be configured for confidential transfers. */
   destinationToken?: Address;
+  /** The mint's auditor ElGamal key, when the mint has one; the amount is also encrypted to it. */
   auditorElgamalPubkey?: Address;
+  /** The owner's keys from {@link deriveConfidentialKeys}; skips the message signature. */
+  keys?: ConfidentialKeypairs;
+  /** Token program. Default: Token-2022. */
   programAddress?: Address;
 };
 
@@ -49,6 +61,17 @@ export type TransferResult = {
   signatures: Signature[];
 };
 
+/**
+ * Send a confidential amount from the owner's available balance to another account. Builds the
+ * three zero-knowledge proofs, verifies them into proof accounts, runs the transfer (with the
+ * mint's transfer-hook accounts, if it has a hook) and closes the proof accounts: five
+ * transactions, sent in order.
+ *
+ * @example
+ * ```ts
+ * await transfer({ rpc, rpcSubscriptions, payer, owner: alice, mint, destinationOwner: bob.address, amount: 600n });
+ * ```
+ */
 export async function transfer(input: TransferInput): Promise<TransferResult> {
   const programAddress = input.programAddress ?? TOKEN_2022_PROGRAM_ADDRESS;
 
@@ -87,12 +110,14 @@ export async function transfer(input: TransferInput): Promise<TransferResult> {
     programAddress,
   });
 
-  const { elgamalKeypair, aesKey } = await deriveConfidentialKeys({ signer: input.owner });
-
   const [{ data: sourceTokenAccount }, { data: destinationTokenAccount }] = await Promise.all([
     fetchToken(input.rpc, sourceToken),
     fetchToken(input.rpc, destinationToken),
   ]);
+
+  const keys = await ownerKeys(input.owner, input.keys, "transfer");
+  assertKeysMatchAccount(keys, sourceTokenAccount, sourceToken, "transfer");
+  const { elgamalKeypair, aesKey } = keys;
 
   const instructionPlan = await getConfidentialTransferInstructionPlan({
     payer: input.payer,
