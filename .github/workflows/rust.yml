@@ -19,7 +19,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -30,3 +30,14 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo build --verbose
       - run: cargo test --lib --verbose
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      # Fails on a known vulnerability in Cargo.lock. Warnings (unmaintained, unsound, yanked
+      # crates deep in the Solana dependency tree) are reported but do not fail the job.
+      - run: cargo audit
