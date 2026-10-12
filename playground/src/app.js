@@ -45,6 +45,7 @@ import {
   deposit,
   deriveAuditorElgamalKeypair,
   getAuditorElgamalPubkey,
+  initConfidentialTransfers,
   transfer,
   withdraw,
 } from "@softseco/confidential-transfers";
@@ -55,7 +56,6 @@ import {
   getInitializeExtraAccountMetaListInstruction,
   getInitializePolicyInstruction,
 } from "./sentinel.js";
-import { initZk } from "./zk-shim.js";
 import { createPollingSubscriptions } from "./polling.js";
 
 // ---------------------------------------------------------------- setup
@@ -726,7 +726,7 @@ async function main() {
     return;
   }
   try {
-    await initZk(new URL("./zk_sdk_bg.wasm", import.meta.url));
+    await initConfidentialTransfers({ wasmUrl: new URL("./zk_sdk_bg.wasm", import.meta.url) });
   } catch (err) {
     console.error(err);
     banner("The zero-knowledge module did not load. Reload the page.");

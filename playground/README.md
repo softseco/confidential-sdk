@@ -22,7 +22,7 @@ Serve `../docs` with any static server to try it locally, e.g. `npx serve ../doc
 
 ## Notes
 
-- `@solana/zk-sdk` ships Node, bundler and web builds. The SDK imports the Node build; the page swaps every `@solana/zk-sdk` import for the web build (`src/zk-shim.js`) and loads the WASM once at startup.
+- esbuild picks the SDK's browser build by itself. It does not copy the zk-sdk WebAssembly, so `build.mjs` copies it into `../docs` and the page passes its URL to `initConfidentialTransfers({ wasmUrl })` at startup. See the [web apps guide](../guides/web-apps.md).
 - Transactions are confirmed by polling the HTTP RPC (`src/polling.js`) instead of a websocket, because the public devnet websocket drops connections under load.
 - The three Sentinel instructions (meta list, policy, blocklist entry) are built with `@solana/kit` in `src/sentinel.js`, from the Sentinel 2.0.2 IDL. From Node you would use `@softseco/sentinel` instead.
 - A transfer the hook refuses stops after its proofs were verified into context accounts. The page finds the ones the wallet still owns and closes them, so the rent comes back.

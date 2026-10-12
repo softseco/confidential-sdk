@@ -2,9 +2,9 @@
 //
 //   npm install && npm run build
 //
-// The SDK and Token-2022 import @solana/zk-sdk's Node and bundler builds. In a plain browser page
-// neither works, so every @solana/zk-sdk import is pointed at one shim over the web build, and the
-// WASM file is copied next to the bundle and loaded once at startup.
+// esbuild picks the SDK's browser build (the "browser" export condition), which uses
+// @solana/zk-sdk's web build. esbuild does not copy the WebAssembly that build loads, so it is
+// copied next to the bundle here and app.js passes its URL to initConfidentialTransfers().
 import { build } from "esbuild";
 import { copyFile, mkdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -12,15 +12,6 @@ import path from "node:path";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const out = path.resolve(here, "../docs");
-const shim = path.join(here, "src/zk-shim.js");
-
-const zkWebBuild = {
-  name: "zk-sdk-web",
-  setup(b) {
-    b.onResolve({ filter: /^@solana\/zk-sdk(\/(node|bundler))?$/ }, () => ({ path: shim }));
-  },
-};
-
 await mkdir(out, { recursive: true });
 
 await build({
@@ -33,7 +24,6 @@ await build({
   minify: true,
   sourcemap: false,
   legalComments: "eof",
-  plugins: [zkWebBuild],
   logLevel: "info",
 });
 
