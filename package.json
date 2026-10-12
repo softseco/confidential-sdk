@@ -31,7 +31,7 @@
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "bin": {
-    "confidential-transfers": "./dist/cli.js"
+    "confidential-transfers": "dist/cli.js"
   },
   "exports": {
     ".": {
