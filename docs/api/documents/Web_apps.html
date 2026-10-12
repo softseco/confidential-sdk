@@ -1,5 +1,5 @@
-<!DOCTYPE html><html class="default" lang="en" data-base="../"><head><meta charset="utf-8"/><meta http-equiv="x-ua-compatible" content="IE=edge"/><title>Web apps | @softseco/confidential-transfers - v3.1.0</title><meta name="description" content="Documentation for @softseco/confidential-transfers"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="stylesheet" href="../assets/style.css"/><link rel="stylesheet" href="../assets/highlight.css"/><script defer src="../assets/main.js"></script><script async src="../assets/icons.js" id="tsd-icons-script"></script><script async src="../assets/search.js" id="tsd-search-script"></script><script async src="../assets/navigation.js" id="tsd-nav-script"></script></head><body><script>document.documentElement.dataset.theme = localStorage.getItem("tsd-theme") || "os";document.body.style.display="none";setTimeout(() => window.app?app.showPage():document.body.style.removeProperty("display"),500)</script><header class="tsd-page-toolbar">
-<div class="tsd-toolbar-contents container"><a href="../index.html" class="title">@softseco/confidential-transfers - v3.1.0</a>
+<!DOCTYPE html><html class="default" lang="en" data-base="../"><head><meta charset="utf-8"/><meta http-equiv="x-ua-compatible" content="IE=edge"/><title>Web apps | @softseco/confidential-transfers - v3.2.0</title><meta name="description" content="Documentation for @softseco/confidential-transfers"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="stylesheet" href="../assets/style.css"/><link rel="stylesheet" href="../assets/highlight.css"/><script defer src="../assets/main.js"></script><script async src="../assets/icons.js" id="tsd-icons-script"></script><script async src="../assets/search.js" id="tsd-search-script"></script><script async src="../assets/navigation.js" id="tsd-nav-script"></script></head><body><script>document.documentElement.dataset.theme = localStorage.getItem("tsd-theme") || "os";document.body.style.display="none";setTimeout(() => window.app?app.showPage():document.body.style.removeProperty("display"),500)</script><header class="tsd-page-toolbar">
+<div class="tsd-toolbar-contents container"><a href="../index.html" class="title">@softseco/confidential-transfers - v3.2.0</a>
 <div id="tsd-toolbar-links"><a href="https://github.com/softseco/confidential-sdk">GitHub</a><a href="https://www.npmjs.com/package/@softseco/confidential-transfers">npm</a><a href="https://softseco.github.io/confidential-sdk/">Playground</a></div><button id="tsd-search-trigger" class="tsd-widget" aria-label="Search"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-search"></use></svg></button><dialog id="tsd-search" aria-label="Search"><input role="combobox" id="tsd-search-input" aria-controls="tsd-search-results" aria-autocomplete="list" aria-expanded="true" autocapitalize="off" autocomplete="off" placeholder="Search the docs" maxLength="100"/>
 <ul role="listbox" id="tsd-search-results"></ul>
 <div id="tsd-search-status" aria-live="polite" aria-atomic="true">
@@ -88,48 +88,70 @@ because the SDK simulates each transaction before sending it.</li>
 <p>Phantom, Solflare and Backpack support both. When a wallet cannot sign messages, the SDK's error
 says so; you can check up front with <code>isMessageSigner(signer)</code> or <code>&quot;solana:signMessage&quot; in wallet.features</code>.</p>
 <h2 id="what-the-user-approves" class="tsd-anchor-link">What the user approves<a href="#what-the-user-approves" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h2>
-<p>When the wallet pays the fees and owns the account, it is asked to approve every transaction:</p>
+<p>Since 3.2.0 the wallet is asked once per operation. A transfer is five transactions, but the SDK
+plans and signs them together, so the wallet shows one request for all five:</p>
 <table>
 <thead>
 <tr>
 <th>Step</th>
+<th>Wallet prompts</th>
 <th>Transactions</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>Unlock (<code>deriveConfidentialKeys</code>)</td>
-<td>none, one message signature</td>
+<td>1 (sign a message)</td>
+<td>none</td>
 </tr>
 <tr>
 <td><code>configureAccount</code></td>
+<td>1</td>
 <td>1</td>
 </tr>
 <tr>
 <td><code>deposit</code></td>
 <td>1</td>
+<td>1</td>
 </tr>
 <tr>
 <td><code>applyPendingBalance</code></td>
 <td>1</td>
+<td>1</td>
 </tr>
 <tr>
 <td><code>transfer</code></td>
-<td>5 (proof accounts, the transfer, closing the proof accounts)</td>
+<td>1</td>
+<td>5 (proof accounts, then the transfer together with closing them)</td>
 </tr>
 <tr>
 <td><code>withdraw</code></td>
+<td>1</td>
 <td>4</td>
 </tr>
 </tbody>
 </table>
-<p>A transfer with five prompts is the main rough edge in a browser today. Approving them in one
-prompt is planned for 3.2.</p>
+<p>The transactions are then sent one after another, each simulated first. If one fails before the
+transfer itself lands, the SDK closes the proof accounts it created (their rent goes back to the
+payer) and throws a <code>ConfidentialTransfersError</code>. Closing them is one more transaction, so the
+wallet asks once more in that case.</p>
+<h2 id="errors" class="tsd-anchor-link">Errors<a href="#errors" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h2>
+<p>Everything the SDK throws on purpose is a <code>ConfidentialTransfersError</code> with a <code>code</code>, so the app
+can say something useful instead of showing a stack trace:</p>
+<pre><code class="ts"><span class="hl-3">import</span><span class="hl-1"> { </span><span class="hl-5">isConfidentialTransfersError</span><span class="hl-1"> } </span><span class="hl-3">from</span><span class="hl-1"> </span><span class="hl-8">&quot;@softseco/confidential-transfers&quot;</span><span class="hl-1">;</span><br/><br/><span class="hl-3">try</span><span class="hl-1"> {</span><br/><span class="hl-1">  </span><span class="hl-3">await</span><span class="hl-1"> </span><span class="hl-4">transfer</span><span class="hl-1">({ </span><span class="hl-5">rpc</span><span class="hl-1">, </span><span class="hl-5">rpcSubscriptions</span><span class="hl-1">, </span><span class="hl-5">payer:</span><span class="hl-1"> </span><span class="hl-5">signer</span><span class="hl-1">, </span><span class="hl-5">owner:</span><span class="hl-1"> </span><span class="hl-5">signer</span><span class="hl-1">, </span><span class="hl-5">mint</span><span class="hl-1">, </span><span class="hl-5">destinationOwner</span><span class="hl-1">, </span><span class="hl-5">amount</span><span class="hl-1">, </span><span class="hl-5">keys</span><span class="hl-1"> });</span><br/><span class="hl-1">} </span><span class="hl-3">catch</span><span class="hl-1"> (</span><span class="hl-5">e</span><span class="hl-1">) {</span><br/><span class="hl-1">  </span><span class="hl-3">if</span><span class="hl-1"> (</span><span class="hl-4">isConfidentialTransfersError</span><span class="hl-1">(</span><span class="hl-5">e</span><span class="hl-1">, </span><span class="hl-8">&quot;PENDING_BALANCE_LIMIT&quot;</span><span class="hl-1">)) </span><span class="hl-4">showMessage</span><span class="hl-1">(</span><span class="hl-8">&quot;The recipient has to accept their incoming payments first.&quot;</span><span class="hl-1">);</span><br/><span class="hl-1">  </span><span class="hl-3">else</span><span class="hl-1"> </span><span class="hl-3">if</span><span class="hl-1"> (</span><span class="hl-4">isConfidentialTransfersError</span><span class="hl-1">(</span><span class="hl-5">e</span><span class="hl-1">, </span><span class="hl-8">&quot;INSUFFICIENT_FUNDS&quot;</span><span class="hl-1">)) </span><span class="hl-4">showMessage</span><span class="hl-1">(</span><span class="hl-8">&quot;Not enough confidential balance.&quot;</span><span class="hl-1">);</span><br/><span class="hl-1">  </span><span class="hl-3">else</span><span class="hl-1"> </span><span class="hl-3">if</span><span class="hl-1"> (</span><span class="hl-4">isConfidentialTransfersError</span><span class="hl-1">(</span><span class="hl-5">e</span><span class="hl-1">) &amp;&amp; </span><span class="hl-5">e</span><span class="hl-1">.</span><span class="hl-5">retryable</span><span class="hl-1">) </span><span class="hl-4">showMessage</span><span class="hl-1">(</span><span class="hl-8">&quot;The network was busy. Try again.&quot;</span><span class="hl-1">);</span><br/><span class="hl-1">  </span><span class="hl-3">else</span><span class="hl-1"> </span><span class="hl-3">throw</span><span class="hl-1"> </span><span class="hl-5">e</span><span class="hl-1">;</span><br/><span class="hl-1">}</span>
+</code><button type="button">Copy</button></pre>
+
+<p>The checks that can be made before anything is signed (the recipient's account exists, is
+configured and can take another payment; the amount fits; the balance covers it) are made first,
+so a doomed operation fails before the wallet opens.</p>
+<p>On a busy network, pass <code>computeUnitPrice</code> (a priority fee in micro-lamports per compute unit),
+and <code>retries</code> to run the operation again when a transaction expires. A retry signs new
+transactions, so the wallet asks again.</p>
 <h2 id="testing" class="tsd-anchor-link">Testing<a href="#testing" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h2>
 <p><code>test/browser/e2e.ts</code> runs <code>examples/vite</code> in Chromium with a Wallet Standard
 test wallet against a local validator: connect, unlock, set up, deposit, apply, transfer,
-withdraw, then checks the balances and that the wallet signed the key message exactly once. CI runs
-it on every push. To run it yourself, see
+withdraw, then checks the balances, that the wallet signed the key message exactly once, and that
+it was asked to approve transactions once per operation. CI runs it on every push. To run it yourself, see
 <a href="https://github.com/softseco/confidential-sdk/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a>.</p>
 </div></div>
 <div class="col-sidebar">
@@ -153,10 +175,11 @@ it on every push. To run it yourself, see
 <li><a href="#keys-from-a-wallet"><span>Keys from a wallet</span></a></li>
 <li><a href="#what-the-wallet-must-support"><span>What the wallet must support</span></a></li>
 <li><a href="#what-the-user-approves"><span>What the user approves</span></a></li>
+<li><a href="#errors"><span>Errors</span></a></li>
 <li><a href="#testing"><span>Testing</span></a></li></ul></div></details></div>
 <div class="site-menu">
 <nav id="tsd-sidebar-links" class="tsd-navigation"><a href="https://github.com/softseco/confidential-sdk" class="tsd-nav-link">GitHub</a><a href="https://www.npmjs.com/package/@softseco/confidential-transfers" class="tsd-nav-link">npm</a><a href="https://softseco.github.io/confidential-sdk/" class="tsd-nav-link">Playground</a></nav>
-<nav class="tsd-navigation"><a href="../index.html">@softseco/confidential-transfers - v3.1.0</a>
+<nav class="tsd-navigation"><a href="../index.html">@softseco/confidential-transfers - v3.2.0</a>
 <ul class="tsd-small-nested-navigation" id="tsd-nav-container">
 <li>Loading...</li></ul></nav></div></div></div><footer>
 <p class="tsd-generator">Generated using <a href="https://typedoc.org/" target="_blank">TypeDoc</a></p></footer>

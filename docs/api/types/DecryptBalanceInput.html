@@ -1,5 +1,5 @@
-<!DOCTYPE html><html class="default" lang="en" data-base="../"><head><meta charset="utf-8"/><meta http-equiv="x-ua-compatible" content="IE=edge"/><title>DecryptBalanceInput | @softseco/confidential-transfers - v3.1.0</title><meta name="description" content="Documentation for @softseco/confidential-transfers"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="stylesheet" href="../assets/style.css"/><link rel="stylesheet" href="../assets/highlight.css"/><script defer src="../assets/main.js"></script><script async src="../assets/icons.js" id="tsd-icons-script"></script><script async src="../assets/search.js" id="tsd-search-script"></script><script async src="../assets/navigation.js" id="tsd-nav-script"></script></head><body><script>document.documentElement.dataset.theme = localStorage.getItem("tsd-theme") || "os";document.body.style.display="none";setTimeout(() => window.app?app.showPage():document.body.style.removeProperty("display"),500)</script><header class="tsd-page-toolbar">
-<div class="tsd-toolbar-contents container"><a href="../index.html" class="title">@softseco/confidential-transfers - v3.1.0</a>
+<!DOCTYPE html><html class="default" lang="en" data-base="../"><head><meta charset="utf-8"/><meta http-equiv="x-ua-compatible" content="IE=edge"/><title>DecryptBalanceInput | @softseco/confidential-transfers - v3.2.0</title><meta name="description" content="Documentation for @softseco/confidential-transfers"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="stylesheet" href="../assets/style.css"/><link rel="stylesheet" href="../assets/highlight.css"/><script defer src="../assets/main.js"></script><script async src="../assets/icons.js" id="tsd-icons-script"></script><script async src="../assets/search.js" id="tsd-search-script"></script><script async src="../assets/navigation.js" id="tsd-nav-script"></script></head><body><script>document.documentElement.dataset.theme = localStorage.getItem("tsd-theme") || "os";document.body.style.display="none";setTimeout(() => window.app?app.showPage():document.body.style.removeProperty("display"),500)</script><header class="tsd-page-toolbar">
+<div class="tsd-toolbar-contents container"><a href="../index.html" class="title">@softseco/confidential-transfers - v3.2.0</a>
 <div id="tsd-toolbar-links"><a href="https://github.com/softseco/confidential-sdk">GitHub</a><a href="https://www.npmjs.com/package/@softseco/confidential-transfers">npm</a><a href="https://softseco.github.io/confidential-sdk/">Playground</a></div><button id="tsd-search-trigger" class="tsd-widget" aria-label="Search"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-search"></use></svg></button><dialog id="tsd-search" aria-label="Search"><input role="combobox" id="tsd-search-input" aria-controls="tsd-search-results" aria-autocomplete="list" aria-expanded="true" autocapitalize="off" autocomplete="off" placeholder="Search the docs" maxLength="100"/>
 <ul role="listbox" id="tsd-search-results"></ul>
 <div id="tsd-search-status" aria-live="polite" aria-atomic="true">
@@ -12,7 +12,7 @@
 <h1>Type Alias DecryptBalanceInput</h1></div>
 <div class="tsd-signature"><span class="tsd-signature-keyword">type</span> <span class="tsd-kind-type-alias">DecryptBalanceInput</span> <span class="tsd-signature-symbol">=</span> <span class="tsd-signature-symbol">{</span><br/>    <a class="tsd-kind-property" href="#keys">keys</a><span class="tsd-signature-symbol">?:</span> <a href="ConfidentialKeypairs.html" class="tsd-signature-type tsd-kind-type-alias">ConfidentialKeypairs</a><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#mint">mint</a><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Address</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#owner">owner</a><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">TransactionSigner</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">MessageSigner</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#programaddress">programAddress</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">Address</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#rpc">rpc</a><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Rpc</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">SolanaRpcApi</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#token">token</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">Address</span><span class="tsd-signature-symbol">;</span><br/><span class="tsd-signature-symbol">}</span></div><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/softseco/confidential-sdk/blob/v3.1.0/src/decryptBalance.ts#L24">decryptBalance.ts:24</a></li></ul></aside>
+<li>Defined in <a href="https://github.com/softseco/confidential-sdk/blob/v3.2.0/src/decryptBalance.ts#L21">src/decryptBalance.ts:21</a></li></ul></aside>
 <section class="tsd-panel-group tsd-index-group">
 <section class="tsd-panel tsd-index-panel">
 <details class="tsd-index-content tsd-accordion" open><summary class="tsd-accordion-summary tsd-index-summary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
@@ -36,12 +36,12 @@
 <div class="tsd-comment tsd-typography"><p>The owner's keys from <a href="../functions/deriveConfidentialKeys.html" class="tsd-kind-function">deriveConfidentialKeys</a>; skips the message signature.</p>
 </div><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/softseco/confidential-sdk/blob/v3.1.0/src/decryptBalance.ts#L36">decryptBalance.ts:36</a></li></ul></aside></section>
+<li>Defined in <a href="https://github.com/softseco/confidential-sdk/blob/v3.2.0/src/decryptBalance.ts#L33">src/decryptBalance.ts:33</a></li></ul></aside></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="mint"><span>mint</span><a href="#mint" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <div class="tsd-signature"><span class="tsd-kind-property">mint</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Address</span></div><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/softseco/confidential-sdk/blob/v3.1.0/src/decryptBalance.ts#L32">decryptBalance.ts:32</a></li></ul></aside></section>
+<li>Defined in <a href="https://github.com/softseco/confidential-sdk/blob/v3.2.0/src/decryptBalance.ts#L29">src/decryptBalance.ts:29</a></li></ul></aside></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="owner"><span>owner</span><a href="#owner" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <div class="tsd-signature"><span class="tsd-kind-property">owner</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">TransactionSigner</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">MessageSigner</span></div>
@@ -49,28 +49,28 @@
 is signed.</p>
 </div><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/softseco/confidential-sdk/blob/v3.1.0/src/decryptBalance.ts#L31">decryptBalance.ts:31</a></li></ul></aside></section>
+<li>Defined in <a href="https://github.com/softseco/confidential-sdk/blob/v3.2.0/src/decryptBalance.ts#L28">src/decryptBalance.ts:28</a></li></ul></aside></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="programaddress"><code class="tsd-tag">Optional</code><span>program<wbr/>Address</span><a href="#programaddress" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <div class="tsd-signature"><span class="tsd-kind-property">programAddress</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">Address</span></div>
 <div class="tsd-comment tsd-typography"><p>Token program. Default: Token-2022.</p>
 </div><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/softseco/confidential-sdk/blob/v3.1.0/src/decryptBalance.ts#L38">decryptBalance.ts:38</a></li></ul></aside></section>
+<li>Defined in <a href="https://github.com/softseco/confidential-sdk/blob/v3.2.0/src/decryptBalance.ts#L35">src/decryptBalance.ts:35</a></li></ul></aside></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="rpc"><span>rpc</span><a href="#rpc" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <div class="tsd-signature"><span class="tsd-kind-property">rpc</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Rpc</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">SolanaRpcApi</span><span class="tsd-signature-symbol">&gt;</span></div>
 <div class="tsd-comment tsd-typography"><p>RPC client, e.g. <code>createSolanaRpc(url)</code>.</p>
 </div><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/softseco/confidential-sdk/blob/v3.1.0/src/decryptBalance.ts#L26">decryptBalance.ts:26</a></li></ul></aside></section>
+<li>Defined in <a href="https://github.com/softseco/confidential-sdk/blob/v3.2.0/src/decryptBalance.ts#L23">src/decryptBalance.ts:23</a></li></ul></aside></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="token"><code class="tsd-tag">Optional</code><span>token</span><a href="#token" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <div class="tsd-signature"><span class="tsd-kind-property">token</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">Address</span></div>
 <div class="tsd-comment tsd-typography"><p>Token account (defaults to the owner's ATA).</p>
 </div><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/softseco/confidential-sdk/blob/v3.1.0/src/decryptBalance.ts#L34">decryptBalance.ts:34</a></li></ul></aside></section></section></details></div>
+<li>Defined in <a href="https://github.com/softseco/confidential-sdk/blob/v3.2.0/src/decryptBalance.ts#L31">src/decryptBalance.ts:31</a></li></ul></aside></section></section></details></div>
 <div class="col-sidebar">
 <div class="page-menu">
 <div class="tsd-navigation settings">
@@ -90,7 +90,7 @@ is signed.</p>
 <div><a href="#keys"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>keys</span></a><a href="#mint"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>mint</span></a><a href="#owner"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>owner</span></a><a href="#programaddress"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>program<wbr/>Address</span></a><a href="#rpc"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>rpc</span></a><a href="#token"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>token</span></a></div></details></div></details></div>
 <div class="site-menu">
 <nav id="tsd-sidebar-links" class="tsd-navigation"><a href="https://github.com/softseco/confidential-sdk" class="tsd-nav-link">GitHub</a><a href="https://www.npmjs.com/package/@softseco/confidential-transfers" class="tsd-nav-link">npm</a><a href="https://softseco.github.io/confidential-sdk/" class="tsd-nav-link">Playground</a></nav>
-<nav class="tsd-navigation"><a href="../index.html">@softseco/confidential-transfers - v3.1.0</a>
+<nav class="tsd-navigation"><a href="../index.html">@softseco/confidential-transfers - v3.2.0</a>
 <ul class="tsd-small-nested-navigation" id="tsd-nav-container">
 <li>Loading...</li></ul></nav></div></div></div><footer>
 <p class="tsd-generator">Generated using <a href="https://typedoc.org/" target="_blank">TypeDoc</a></p></footer>
