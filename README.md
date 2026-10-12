@@ -13,7 +13,7 @@ transfers without hand-assembling the primitives.
 
 A Rust crate with the core helpers lives in [`rust/`](#rust).
 
-> **Status: `v3.2.0`.** Built on `@solana/kit` 8. The whole flow (configure, deposit, apply,
+> **Status: `v3.3.0`.** Built on `@solana/kit` 8. The whole flow (configure, deposit, apply,
 > transfer, withdraw) runs end-to-end on **devnet** and against a local validator, in Node and in
 > the browser. The SDK is self-audited, not independently audited. It runs on **Node ≥ 20.18**
 > and in web apps: bundlers pick the browser build by themselves, keys come from the user's
@@ -192,6 +192,20 @@ await transfer({ rpc, rpcSubscriptions, payer, owner: alice, mint, destinationOw
 const amount = await decryptTransferAmountAsAuditor({ rpc, signature, auditorKeypair }); // 1000n
 ```
 
+Since 3.3.0 `transfer` reads the mint's auditor key itself, so `auditorElgamalPubkey` is only
+needed to override it.
+
+For the whole mint at once, `listConfidentialActivity` lists every deposit, confidential transfer
+and withdraw with the amounts decrypted, and `confidentialActivityToCsv` turns that into a
+spreadsheet. Auditors who do not write code can run the same from the command line:
+
+```bash
+npx @softseco/confidential-transfers audit-report --mint <mint> --keypair auditor-wallet.json \
+  --rpc https://your-endpoint --out report.csv
+```
+
+See the [guide for auditors](./guides/auditors.md).
+
 ## API
 
 | Function | Purpose | Notable inputs / output |
@@ -211,6 +225,8 @@ const amount = await decryptTransferAmountAsAuditor({ rpc, signature, auditorKey
 | `pdaWalletPublicSeed` | Canonical seed for single-signer PDA wallets | `programId`, `walletPda`, `mint`, `tokenAccount` → `Uint8Array` |
 | `initConfidentialTransfers` | Start loading the WebAssembly early (browser; no-op in Node) | optional `wasmUrl` |
 | `recoverProofAccounts` | Close proof accounts a stopped transfer or withdraw left behind, and get the rent back | `rpc`, `rpcSubscriptions`, `authority` (the payer) → `{ closed, leftOpen, lamports }` |
+| `listConfidentialActivity` | A mint's deposits, confidential transfers and withdraws, amounts decrypted with the auditor key | `rpc`, `mint`, `auditorKeypair`, optional `since`, `until` → `ConfidentialActivity[]` |
+| `confidentialActivityToCsv` | That list as CSV | `activity`, optional `decimals` → `string` |
 | `isConfidentialTransfersError` | Check an error's `code` (`INSUFFICIENT_FUNDS`, `PENDING_BALANCE_LIMIT`, `TRANSACTION_EXPIRED`, …) | `error`, optional `code` → `boolean` |
 
 Every function accepts an optional `programAddress` (defaults to Token-2022). Functions that need
@@ -265,16 +281,15 @@ full workflow.
 
 ## Project status
 
-`v3.2.0`. The TypeScript package covers the full confidential-transfer lifecycle (configure,
+`v3.3.0`. The TypeScript package covers the full confidential-transfer lifecycle (configure,
 deposit, apply, transfer, withdraw, decrypt), transfer-hook mints and auditor selective
-disclosure, runs end-to-end on devnet, works in web apps with browser wallets, and handles
-failures halfway through a transfer. Keys follow the ecosystem-standard
+disclosure, runs end-to-end on devnet, works in web apps with browser wallets, handles
+failures halfway through a transfer, and gives a mint's auditor a full report. Keys follow the ecosystem-standard
 `solana-conf-bal/v1` derivation, pinned by the same test vector in TypeScript and Rust. Changes
 are tracked in [CHANGELOG.md](./CHANGELOG.md).
 
 Planned next:
 
-- A toolkit for auditors: read a mint's confidential transfers with the auditor key and export them
 - `withdraw` and transfer-hook accounts in the Rust crate
 - An independent audit
 

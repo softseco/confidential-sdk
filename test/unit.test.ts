@@ -52,6 +52,8 @@ describe("public API", () => {
       "recoverProofAccounts",
       "isConfidentialTransfersError",
       "ConfidentialTransfersError",
+      "listConfidentialActivity",
+      "confidentialActivityToCsv",
     ];
     for (const name of names) {
       expect(sdk, `missing export: ${name}`)

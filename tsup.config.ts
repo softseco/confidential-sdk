@@ -33,6 +33,13 @@ export default defineConfig([
     sourcemap: true,
   },
   {
+    // The `confidential-transfers` command (package.json "bin"), for Node.
+    entry: { cli: "src/cli.ts" },
+    format: ["cjs"],
+    platform: "node",
+    banner: { js: "#!/usr/bin/env node" },
+  },
+  {
     entry: { index: "src/index.ts" },
     outDir: "dist/browser",
     format: ["esm"],

@@ -20,6 +20,7 @@
  *
  * @packageDocumentation
  * @document ../guides/web-apps.md
+ * @document ../guides/auditors.md
  */
 export { initConfidentialTransfers } from "./internal/zk";
 export { ConfidentialTransfersError, isConfidentialTransfersError } from "./errors";
@@ -46,6 +47,13 @@ export {
   getAuditorElgamalPubkey,
 } from "./auditor";
 export type { DecryptTransferAmountAsAuditorInput } from "./auditor";
+export { confidentialActivityToCsv, listConfidentialActivity } from "./auditorReport";
+export type {
+  ConfidentialActivity,
+  ConfidentialActivityCsvOptions,
+  ConfidentialActivityKind,
+  ListConfidentialActivityInput,
+} from "./auditorReport";
 export {
   findExtraAccountMetaListPda,
   getTransferHookProgram,

@@ -17,7 +17,8 @@ import {
   type SolanaRpcSubscriptionsApi,
   type TransactionSigner,
 } from "@solana/kit";
-import { TOKEN_2022_PROGRAM_ADDRESS, findAssociatedTokenPda } from "@solana-program/token-2022";
+import { TOKEN_2022_PROGRAM_ADDRESS, fetchMint, findAssociatedTokenPda } from "@solana-program/token-2022";
+import { isSome } from "@solana/kit";
 
 import { ConfidentialTransfersError } from "./errors";
 import { assertCanReceive, readConfiguredAccount } from "./internal/accounts";
@@ -47,7 +48,10 @@ export type TransferInput = SendOptions & {
   sourceToken?: Address;
   /** Destination token account; must be configured for confidential transfers. */
   destinationToken?: Address;
-  /** The mint's auditor ElGamal key, when the mint has one; the amount is also encrypted to it. */
+  /**
+   * The mint's auditor ElGamal key; the amount is also encrypted to it. Read from the mint when not
+   * given (since 3.3.0), so it is only needed to override that.
+   */
   auditorElgamalPubkey?: Address;
   /** The owner's keys from {@link deriveConfidentialKeys}; skips the message signature. */
   keys?: ConfidentialKeypairs;
@@ -125,6 +129,9 @@ export async function transfer(input: TransferInput): Promise<TransferResult> {
     keys ??= await ownerKeys(input.owner, undefined, operation);
     assertKeysMatchAccount(keys, source.data, sourceToken, operation);
 
+    // Token-2022 refuses a transfer whose amount is not also encrypted to the mint's auditor key.
+    const auditorElgamalPubkey = input.auditorElgamalPubkey ?? (await mintAuditorKey(input.rpc, input.mint));
+
     const flow = await getConfidentialTransferProofFlow({
       payer: input.payer,
       rpc: input.rpc,
@@ -137,7 +144,7 @@ export async function transfer(input: TransferInput): Promise<TransferResult> {
       amount,
       sourceElgamalKeypair: keys.elgamalKeypair,
       aesKey: keys.aesKey,
-      auditorElgamalPubkey: input.auditorElgamalPubkey,
+      auditorElgamalPubkey,
       transferHookAccounts,
       programAddress,
     });
@@ -149,4 +156,11 @@ export async function transfer(input: TransferInput): Promise<TransferResult> {
   });
 
   return { sourceToken, destinationToken: destination, ...result };
+}
+
+async function mintAuditorKey(rpc: TransferInput["rpc"], mint: Address): Promise<Address | undefined> {
+  const { data } = await fetchMint(rpc, mint);
+  if (!isSome(data.extensions)) return undefined;
+  const ct = data.extensions.value.find((e) => e.__kind === "ConfidentialTransferMint");
+  return ct && isSome(ct.auditorElgamalPubkey) ? ct.auditorElgamalPubkey.value : undefined;
 }

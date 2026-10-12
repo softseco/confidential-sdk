@@ -137,3 +137,24 @@ describe("input checks before the network", () => {
     expect(isConfidentialTransfersError(new Error("x"))).to.equal(false);
   });
 });
+
+describe("auditor report CSV", () => {
+  it("writes one row per entry, formats amounts and quotes what needs quoting", async () => {
+    const { confidentialActivityToCsv } = await import("../src/index");
+    const a = (await generateKeyPairSigner()).address;
+    const b = (await generateKeyPairSigner()).address;
+    const csv = confidentialActivityToCsv(
+      [
+        { signature: "sig1" as never, slot: 5n, blockTime: new Date("2026-10-12T10:00:00Z"), kind: "transfer", fromToken: a, fromOwner: a, toToken: b, toOwner: b, amount: 12345n, decrypted: true },
+        { signature: "sig2" as never, slot: 6n, blockTime: null, kind: "transfer", fromToken: a, fromOwner: null, toToken: b, toOwner: null, amount: null, decrypted: false, note: 'not encrypted, to "this" key' },
+        { signature: "sig3" as never, slot: 7n, blockTime: null, kind: "deposit", fromToken: a, fromOwner: a, toToken: a, toOwner: a, amount: 5n, decrypted: false },
+      ],
+      { decimals: 2 },
+    );
+    const lines = csv.split("\r\n");
+    expect(lines[1]).to.equal(`2026-10-12T10:00:00.000Z,5,sig1,transfer,${a},${a},${b},${b},12345,123.45,yes,`);
+    expect(lines[2]).to.equal(`,6,sig2,transfer,,${a},,${b},,,no,"not encrypted, to ""this"" key"`);
+    expect(lines[3]).to.contain(",5,0.05,no,");
+    expect(lines[4]).to.equal("");
+  });
+});

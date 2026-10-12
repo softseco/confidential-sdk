@@ -15,6 +15,28 @@ versioned on its own, and the Rust crate stays at 2.0.0 until it changes.
 
 _Nothing yet._
 
+## [3.3.0] - 2026-10-12
+
+For auditors. No breaking changes.
+
+### Added
+
+- `listConfidentialActivity({ rpc, mint, auditorKeypair })` reads a mint's transaction history and
+  lists every deposit, confidential transfer and withdraw, oldest first, with the transferred
+  amounts decrypted with the auditor key. It finds the instructions inside other programs' calls
+  too, works with transactions built by any client, skips failed transactions, and takes
+  `since`, `until`, `maxTransactions` and `concurrency`. It checks that the key is the mint's
+  auditor key (`KEYS_MISMATCH` otherwise; `skipAuditorKeyCheck` lists what the key can read).
+- `confidentialActivityToCsv(activity, { decimals })`: the list as CSV (RFC 4180, UTC times).
+- A command line: `npx @softseco/confidential-transfers audit-report --mint … --keypair … --rpc …`
+  writes the report as CSV, with the auditor key derived from the auditor's wallet file.
+- A guide for auditors (`guides/auditors.md`), also in the API reference.
+
+### Changed
+
+- `transfer` reads the mint's auditor key itself when `auditorElgamalPubkey` is not given. Before,
+  a transfer on a mint with an auditor failed on chain unless the caller passed the key.
+
 ## [3.2.0] - 2026-10-12
 
 Reliability, for mainnet. No breaking changes for code that awaits these functions and handles a
@@ -263,7 +285,8 @@ to that surface under semantic versioning.
 - Local-validator integration tests (gated behind `CT_LOCAL_PROGRAM=1`) and validator-free unit
   tests in CI. Published to npm.
 
-[Unreleased]: https://github.com/softseco/confidential-sdk/compare/v3.2.0...HEAD
+[Unreleased]: https://github.com/softseco/confidential-sdk/compare/v3.3.0...HEAD
+[3.3.0]: https://github.com/softseco/confidential-sdk/releases/tag/v3.3.0
 [3.2.0]: https://github.com/softseco/confidential-sdk/releases/tag/v3.2.0
 [3.1.0]: https://github.com/softseco/confidential-sdk/releases/tag/v3.1.0
 [3.0.1]: https://github.com/softseco/confidential-sdk/releases/tag/v3.0.1
