@@ -15,6 +15,54 @@ versioned on its own, and the Rust crate stays at 2.0.0 until it changes.
 
 _Nothing yet._
 
+## [3.2.0] - 2026-10-12
+
+Reliability, for mainnet. No breaking changes for code that awaits these functions and handles a
+thrown error; see Changed for what is different.
+
+### Added
+
+- **One wallet prompt per operation.** `transfer` (five transactions) and `withdraw` (four) plan
+  all their transactions first and have each signer sign them together, so a browser wallet asks
+  once instead of five or four times. They are then sent in order, each simulated first.
+- **Cleanup when a step fails halfway.** If a transaction fails before the transfer or withdraw
+  itself lands (in simulation, on chain, or because it expired), the proof accounts already
+  created are closed again and their rent returned to the payer. The error says which step failed
+  (`step`: `"proofs"` or the operation), which transactions landed, and which proof accounts were
+  closed or left open.
+- `recoverProofAccounts({ rpc, rpcSubscriptions, authority })` finds proof accounts a stopped
+  process left behind (the authority is the payer of the transfer) and closes them.
+- **Typed errors.** Everything the SDK throws on purpose is a `ConfidentialTransfersError` with a
+  `code` (`INSUFFICIENT_FUNDS`, `PENDING_BALANCE_LIMIT`, `ACCOUNT_NOT_FOUND`,
+  `ACCOUNT_NOT_CONFIGURED`, `KEYS_MISMATCH`, `TRANSACTION_FAILED`, `TRANSACTION_EXPIRED` and
+  others), `operation`, program `logs` when there are any, and `retryable`.
+  `isConfidentialTransfersError(error, code?)` checks it.
+- **Checks before signing.** `deposit` and `transfer` check that the account (for a transfer, the
+  recipient's) exists, is configured and approved, accepts confidential credits and has room for
+  one more pending credit, and that the amount fits (at most 2^48 - 1 per deposit or transfer) and
+  is covered. A doomed operation now fails before a wallet opens.
+- `computeUnitPrice` on every sending function: a priority fee in micro-lamports per compute unit,
+  added to each transaction that has room for it. (The range-proof transaction of a transfer is too
+  full to take one.)
+- `retries` on every sending function: run the operation again when a transaction expires before
+  it is confirmed. Default 0, since a retry signs new transactions and a wallet asks again.
+- `examples/mainnet.ts` (`npm run example:mainnet`): checks in a free simulation that mainnet's ZK
+  ElGamal Proof Program accepts the SDK's proofs and, with `--send`, runs the whole flow with a
+  test token and tiny amounts (about 0.01 SOL, mostly rent).
+
+### Changed
+
+- Errors are `ConfidentialTransfersError` instead of plain `Error` (still `instanceof Error`, with
+  the same kind of message). Calls that used to fail in simulation now fail earlier with a specific
+  code: `configureAccount` on a configured account (`ACCOUNT_ALREADY_CONFIGURED`), `deposit` into
+  an unconfigured account (`ACCOUNT_NOT_CONFIGURED`), a transfer to a missing account
+  (`ACCOUNT_NOT_FOUND`).
+- `transfer` and `deposit` refuse an amount of zero.
+- `transfer` and `withdraw` results have `proofAccountsLeftOpen`, normally empty.
+- `applyPendingBalance` explains when the pending balance cannot be decrypted because incoming
+  amounts add up to more than about 2^48 base units (`DECRYPTION_FAILED`), instead of passing on
+  the zk-sdk's error.
+
 ## [3.1.0] - 2026-10-12
 
 Web apps. No breaking changes: code written for 3.0 works unchanged.
@@ -215,7 +263,8 @@ to that surface under semantic versioning.
 - Local-validator integration tests (gated behind `CT_LOCAL_PROGRAM=1`) and validator-free unit
   tests in CI. Published to npm.
 
-[Unreleased]: https://github.com/softseco/confidential-sdk/compare/v3.1.0...HEAD
+[Unreleased]: https://github.com/softseco/confidential-sdk/compare/v3.2.0...HEAD
+[3.2.0]: https://github.com/softseco/confidential-sdk/releases/tag/v3.2.0
 [3.1.0]: https://github.com/softseco/confidential-sdk/releases/tag/v3.1.0
 [3.0.1]: https://github.com/softseco/confidential-sdk/releases/tag/v3.0.1
 [3.0.0]: https://github.com/softseco/confidential-sdk/releases/tag/v3.0.0

@@ -52,8 +52,8 @@ there because of the local link. Keep `optimizeDeps.exclude`.
 
 - `deriveConfidentialKeys({ signer })` runs once, on "Unlock". The keys stay in memory and are
   passed as `keys` to every call, so the wallet does not ask to sign the message again.
-- Each transaction still needs the wallet's approval: one for set up, deposit and apply, five for
-  a transfer, four for a withdraw.
+- Each operation needs one approval in the wallet. A transfer is five transactions and a withdraw
+  four; the SDK has the wallet sign them together, so it asks once.
 - The recipient must have set up a token account for the mint before you can send to them.
 
 The repository's browser test (`test/browser/e2e.ts`) runs this app in Chromium with a test wallet

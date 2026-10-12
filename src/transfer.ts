@@ -4,9 +4,10 @@
 // destination account. This generates the three required zero-knowledge proofs
 // (ciphertext-commitment equality, batched grouped-ciphertext validity, and
 // batched range), verifies each into a dedicated context-state account, runs the
-// transfer that references those accounts, and finally closes them. The whole
-// flow is produced as an InstructionPlan by the canonical SPL helper and executed
-// as a sequence of transactions (see internal/executePlan.ts).
+// transfer that references those accounts, and finally closes them. The
+// transactions are signed together (one wallet prompt) and sent in order; if a
+// step fails before the transfer lands, the proof accounts are closed again
+// (see internal/send.ts).
 import {
   type Address,
   type Rpc,
@@ -16,18 +17,17 @@ import {
   type SolanaRpcSubscriptionsApi,
   type TransactionSigner,
 } from "@solana/kit";
-import {
-  TOKEN_2022_PROGRAM_ADDRESS,
-  fetchToken,
-  findAssociatedTokenPda,
-} from "@solana-program/token-2022";
-import type { ConfidentialKeypairs } from "./keys";
-import { assertKeysMatchAccount, ownerKeys } from "./internal/ownerKeys";
-import { getConfidentialTransferInstructionPlan } from "./internal/confidentialTransferProof";
-import { executeInstructionPlan } from "./internal/executePlan";
-import { resolveTransferHookAccounts } from "./internal/transferHook";
+import { TOKEN_2022_PROGRAM_ADDRESS, findAssociatedTokenPda } from "@solana-program/token-2022";
 
-export type TransferInput = {
+import { ConfidentialTransfersError } from "./errors";
+import { assertCanReceive, readConfiguredAccount } from "./internal/accounts";
+import { getConfidentialTransferProofFlow } from "./internal/confidentialTransferProof";
+import { assertKeysMatchAccount, ownerKeys } from "./internal/ownerKeys";
+import { executeProofFlow, withRetries, type SendOptions } from "./internal/send";
+import { resolveTransferHookAccounts } from "./internal/transferHook";
+import type { ConfidentialKeypairs } from "./keys";
+
+export type TransferInput = SendOptions & {
   /** RPC client, e.g. `createSolanaRpc(url)`. */
   rpc: Rpc<SolanaRpcApi>;
   /** Used to confirm the transaction(s). */
@@ -58,14 +58,22 @@ export type TransferInput = {
 export type TransferResult = {
   sourceToken: Address;
   destinationToken: Address;
+  /** The transactions sent, in order. */
   signatures: Signature[];
+  /**
+   * Proof accounts left open although the transfer went through (only if closing them failed;
+   * normally empty). `recoverProofAccounts` closes them.
+   */
+  proofAccountsLeftOpen: Address[];
 };
 
 /**
  * Send a confidential amount from the owner's available balance to another account. Builds the
  * three zero-knowledge proofs, verifies them into proof accounts, runs the transfer (with the
  * mint's transfer-hook accounts, if it has a hook) and closes the proof accounts: five
- * transactions, sent in order.
+ * transactions, signed together (a wallet asks once) and sent in order. If a step fails before
+ * the transfer itself lands, the proof accounts are closed and a ConfidentialTransfersError says
+ * which step failed.
  *
  * @example
  * ```ts
@@ -73,76 +81,72 @@ export type TransferResult = {
  * ```
  */
 export async function transfer(input: TransferInput): Promise<TransferResult> {
+  const operation = "transfer";
   const programAddress = input.programAddress ?? TOKEN_2022_PROGRAM_ADDRESS;
+  const amount = BigInt(input.amount);
+  if (amount <= 0n) {
+    throw new ConfidentialTransfersError("INVALID_INPUT", `${operation}: the amount must be greater than zero, got ${amount}.`, { operation });
+  }
 
   const sourceToken =
     input.sourceToken ??
-    (
-      await findAssociatedTokenPda({
-        owner: input.owner.address,
-        tokenProgram: programAddress,
-        mint: input.mint,
-      })
-    )[0];
+    (await findAssociatedTokenPda({ owner: input.owner.address, tokenProgram: programAddress, mint: input.mint }))[0];
 
   let destinationToken = input.destinationToken;
   if (destinationToken == null) {
     if (input.destinationOwner == null) {
-      throw new Error("transfer requires either destinationToken or destinationOwner");
+      throw new ConfidentialTransfersError("INVALID_INPUT", "transfer requires either destinationToken or destinationOwner", { operation });
     }
     destinationToken = (
-      await findAssociatedTokenPda({
-        owner: input.destinationOwner,
-        tokenProgram: programAddress,
-        mint: input.mint,
-      })
+      await findAssociatedTokenPda({ owner: input.destinationOwner, tokenProgram: programAddress, mint: input.mint })
     )[0];
   }
+  const destination = destinationToken;
 
-  // Token-2022 calls the mint's transfer hook on a confidential transfer too, and the hook's
-  // accounts have to travel with the instruction or the transfer fails with MissingAccount.
-  const transferHookAccounts = await resolveTransferHookAccounts({
-    rpc: input.rpc,
-    mint: input.mint,
-    sourceToken,
-    destinationToken,
-    owner: input.owner.address,
-    programAddress,
+  let keys = input.keys;
+  const result = await withRetries(input.retries, async () => {
+    const [source, dest] = await Promise.all([
+      readConfiguredAccount(input.rpc, sourceToken, operation, "your"),
+      readConfiguredAccount(input.rpc, destination, operation, "the recipient's"),
+    ]);
+    assertCanReceive(dest.ct, destination, operation, "the recipient's");
+
+    // Token-2022 calls the mint's transfer hook on a confidential transfer too, and the hook's
+    // accounts have to travel with the instruction or the transfer fails with MissingAccount.
+    const transferHookAccounts = await resolveTransferHookAccounts({
+      rpc: input.rpc,
+      mint: input.mint,
+      sourceToken,
+      destinationToken: destination,
+      owner: input.owner.address,
+      programAddress,
+    });
+
+    keys ??= await ownerKeys(input.owner, undefined, operation);
+    assertKeysMatchAccount(keys, source.data, sourceToken, operation);
+
+    const flow = await getConfidentialTransferProofFlow({
+      payer: input.payer,
+      rpc: input.rpc,
+      sourceToken,
+      mint: input.mint,
+      destinationToken: destination,
+      sourceTokenAccount: source.data,
+      destinationTokenAccount: dest.data,
+      authority: input.owner,
+      amount,
+      sourceElgamalKeypair: keys.elgamalKeypair,
+      aesKey: keys.aesKey,
+      auditorElgamalPubkey: input.auditorElgamalPubkey,
+      transferHookAccounts,
+      programAddress,
+    });
+    return executeProofFlow(
+      { rpc: input.rpc, rpcSubscriptions: input.rpcSubscriptions, payer: input.payer, operation, computeUnitPrice: input.computeUnitPrice },
+      flow,
+      operation,
+    );
   });
 
-  const [{ data: sourceTokenAccount }, { data: destinationTokenAccount }] = await Promise.all([
-    fetchToken(input.rpc, sourceToken),
-    fetchToken(input.rpc, destinationToken),
-  ]);
-
-  const keys = await ownerKeys(input.owner, input.keys, "transfer");
-  assertKeysMatchAccount(keys, sourceTokenAccount, sourceToken, "transfer");
-  const { elgamalKeypair, aesKey } = keys;
-
-  const instructionPlan = await getConfidentialTransferInstructionPlan({
-    payer: input.payer,
-    rpc: input.rpc,
-    sourceToken,
-    mint: input.mint,
-    destinationToken,
-    sourceTokenAccount,
-    destinationTokenAccount,
-    authority: input.owner,
-    amount: input.amount,
-    sourceElgamalKeypair: elgamalKeypair,
-    aesKey,
-    auditorElgamalPubkey: input.auditorElgamalPubkey,
-    transferHookAccounts,
-    programAddress,
-  });
-
-  const signatures = await executeInstructionPlan({
-    rpc: input.rpc,
-    rpcSubscriptions: input.rpcSubscriptions,
-    payer: input.payer,
-    instructionPlan,
-    label: "confidential transfer",
-  });
-
-  return { sourceToken, destinationToken, signatures };
+  return { sourceToken, destinationToken: destination, ...result };
 }

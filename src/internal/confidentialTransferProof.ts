@@ -52,6 +52,7 @@ import {
   PedersenOpening,
 } from "./zk";
 
+import { ConfidentialTransfersError } from "../errors";
 import {
   extractCiphertextFromGroupedBytes,
   subtractAmountFromCiphertext,
@@ -101,13 +102,16 @@ function getRequiredConfidentialTransferAccountExtension(
   tokenAccount: Token,
 ): ConfidentialTransferAccountExtension {
   if (!isSome(tokenAccount.extensions)) {
-    throw new Error("Token account is missing extensions.");
+    throw new ConfidentialTransfersError("ACCOUNT_NOT_CONFIGURED", "Token account is missing extensions.");
   }
   const extension = tokenAccount.extensions.value.find(
     (candidate) => candidate.__kind === "ConfidentialTransferAccount",
   ) as ConfidentialTransferAccountExtension | undefined;
   if (!extension) {
-    throw new Error("Token account is missing the ConfidentialTransferAccount extension.");
+    throw new ConfidentialTransfersError(
+      "ACCOUNT_NOT_CONFIGURED",
+      "Token account is missing the ConfidentialTransferAccount extension.",
+    );
   }
   return extension;
 }
@@ -115,7 +119,7 @@ function getRequiredConfidentialTransferAccountExtension(
 function parseAeCiphertext(bytes: ReadonlyUint8Array) {
   const ciphertext = AeCiphertext.fromBytes(new Uint8Array(bytes));
   if (!ciphertext) {
-    throw new Error("Failed to deserialize an authenticated-encryption ciphertext.");
+    throw new ConfidentialTransfersError("DECRYPTION_FAILED", "Failed to deserialize an authenticated-encryption ciphertext.");
   }
   return ciphertext;
 }
@@ -123,7 +127,7 @@ function parseAeCiphertext(bytes: ReadonlyUint8Array) {
 function parseElGamalCiphertext(bytes: ReadonlyUint8Array) {
   const ciphertext = ElGamalCiphertext.fromBytes(new Uint8Array(bytes));
   if (!ciphertext) {
-    throw new Error("Failed to deserialize an ElGamal ciphertext.");
+    throw new ConfidentialTransfersError("DECRYPTION_FAILED", "Failed to deserialize an ElGamal ciphertext.");
   }
   return ciphertext;
 }
@@ -141,7 +145,7 @@ function getDestinationElGamalPubkey(input: GetConfidentialTransferInstructionPl
     return getElGamalPubkeyFromAddress(input.destinationElgamalPubkey);
   }
   if (!input.destinationTokenAccount) {
-    throw new Error("Destination confidential transfer state is required.");
+    throw new ConfidentialTransfersError("INVALID_INPUT", "Destination confidential transfer state is required.");
   }
   return getElGamalPubkeyFromAddress(
     getRequiredConfidentialTransferAccountExtension(input.destinationTokenAccount).elgamalPubkey,
@@ -159,7 +163,7 @@ function decryptAvailableBalance(account: ConfidentialTransferAccountExtension, 
 
 function assertNonNegativeAmount(amount: bigint): void {
   if (amount < 0n) {
-    throw new Error("Amount must be non-negative.");
+    throw new ConfidentialTransfersError("INVALID_INPUT", "Amount must be non-negative.");
   }
 }
 
@@ -167,9 +171,30 @@ function computeNewAvailableBalance(currentBalance: bigint, amount: bigint): big
   assertNonNegativeAmount(amount);
   const newBalance = currentBalance - amount;
   if (newBalance < 0n) {
-    throw new Error("Insufficient funds.");
+    throw new ConfidentialTransfersError(
+      "INSUFFICIENT_FUNDS",
+      `Insufficient funds: the confidential available balance is ${currentBalance}, the amount is ${amount}.`,
+    );
   }
   return newBalance;
+}
+
+/**
+ * The parts of a transfer or withdraw: verify the proofs into context-state accounts (`setup`), run
+ * the instruction that uses them (`action`), close them again (`cleanup`). The executor sends
+ * them in that order and, if something fails before `action` lands, closes whichever of
+ * `proofAccounts` were created.
+ */
+export type ProofFlow = {
+  proofAccounts: Address[];
+  setup: InstructionPlan;
+  action: Instruction;
+  cleanup: Instruction[];
+};
+
+/** The flow as one instruction plan: setup, then the action, then cleanup. */
+export function proofFlowToPlan(flow: ProofFlow): InstructionPlan {
+  return sequentialInstructionPlan([flow.setup, flow.action, parallelInstructionPlan(flow.cleanup)]);
 }
 
 /**
@@ -231,11 +256,18 @@ function withTransferHookAccounts<T extends { accounts?: unknown }>(
 export async function getConfidentialTransferInstructionPlan(
   input: GetConfidentialTransferInstructionPlanInput,
 ): Promise<InstructionPlan> {
+  return proofFlowToPlan(await getConfidentialTransferProofFlow(input));
+}
+
+export async function getConfidentialTransferProofFlow(
+  input: GetConfidentialTransferInstructionPlanInput,
+): Promise<ProofFlow> {
   const sourceAccount = getRequiredConfidentialTransferAccountExtension(input.sourceTokenAccount);
   const amount = BigInt(input.amount);
   assertNonNegativeAmount(amount);
   if (amount > MAX_TRANSFER_AMOUNT) {
-    throw new Error(
+    throw new ConfidentialTransfersError(
+      "AMOUNT_TOO_LARGE",
       `amount ${amount} exceeds the confidential-transfer maximum of ${MAX_TRANSFER_AMOUNT} (2^48-1)`,
     );
   }
@@ -337,13 +369,14 @@ export async function getConfidentialTransferInstructionPlan(
     buildContextStateProofPlan(rangeProofData.toBytes(), verifyBatchedRangeProofU128, input.payer, input.rpc),
   ]);
 
-  return sequentialInstructionPlan([
-    parallelInstructionPlan([
+  return {
+    proofAccounts: [equalityProofPlan.address, ciphertextValidityProofPlan.address, rangeProofPlan.address],
+    setup: parallelInstructionPlan([
       equalityProofPlan.setup,
       ciphertextValidityProofPlan.setup,
       rangeProofPlan.setup,
     ]),
-    withTransferHookAccounts(
+    action: withTransferHookAccounts(
       getConfidentialTransferInstruction(
       {
         sourceToken: input.sourceToken,
@@ -365,12 +398,8 @@ export async function getConfidentialTransferInstructionPlan(
       ),
       input.transferHookAccounts,
     ),
-    parallelInstructionPlan([
-      equalityProofPlan.cleanup,
-      ciphertextValidityProofPlan.cleanup,
-      rangeProofPlan.cleanup,
-    ]),
-  ]);
+    cleanup: [equalityProofPlan.cleanup, ciphertextValidityProofPlan.cleanup, rangeProofPlan.cleanup],
+  };
 }
 
 export type GetConfidentialWithdrawInstructionPlanInput = {
@@ -400,10 +429,16 @@ export type GetConfidentialWithdrawInstructionPlanInput = {
 export async function getConfidentialWithdrawInstructionPlan(
   input: GetConfidentialWithdrawInstructionPlanInput,
 ): Promise<InstructionPlan> {
+  return proofFlowToPlan(await getConfidentialWithdrawProofFlow(input));
+}
+
+export async function getConfidentialWithdrawProofFlow(
+  input: GetConfidentialWithdrawInstructionPlanInput,
+): Promise<ProofFlow> {
   const account = getRequiredConfidentialTransferAccountExtension(input.tokenAccount);
   const amount = BigInt(input.amount);
   if (amount <= 0n) {
-    throw new Error(`withdraw amount must be greater than zero, got ${amount}`);
+    throw new ConfidentialTransfersError("INVALID_INPUT", `withdraw amount must be greater than zero, got ${amount}`);
   }
   const newAvailableBalance = computeNewAvailableBalance(
     decryptAvailableBalance(account, input.aesKey),
@@ -440,9 +475,10 @@ export async function getConfidentialWithdrawInstructionPlan(
     buildContextStateProofPlan(rangeProofData.toBytes(), verifyBatchedRangeProofU64, input.payer, input.rpc),
   ]);
 
-  return sequentialInstructionPlan([
-    parallelInstructionPlan([equalityProofPlan.setup, rangeProofPlan.setup]),
-    getConfidentialWithdrawInstruction(
+  return {
+    proofAccounts: [equalityProofPlan.address, rangeProofPlan.address],
+    setup: parallelInstructionPlan([equalityProofPlan.setup, rangeProofPlan.setup]),
+    action: getConfidentialWithdrawInstruction(
       {
         token: input.token,
         mint: input.mint,
@@ -458,6 +494,6 @@ export async function getConfidentialWithdrawInstructionPlan(
       },
       { programAddress: input.programAddress ?? TOKEN_2022_PROGRAM_ADDRESS },
     ),
-    parallelInstructionPlan([equalityProofPlan.cleanup, rangeProofPlan.cleanup]),
-  ]);
+    cleanup: [equalityProofPlan.cleanup, rangeProofPlan.cleanup],
+  };
 }

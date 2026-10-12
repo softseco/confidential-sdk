@@ -21,6 +21,7 @@ import {
   TOKEN_2022_PROGRAM_ADDRESS,
   getConfidentialTransferInstructionDataDecoder,
 } from "@solana-program/token-2022";
+import { ConfidentialTransfersError } from "./errors";
 import { ElGamalCiphertext, ElGamalKeypair, assertZkReady, ensureZk } from "./internal/zk";
 
 import { deriveConfidentialKeys } from "./keys";
@@ -84,7 +85,9 @@ export async function decryptTransferAmountAsAuditor(
     })
     .send();
   if (result == null) {
-    throw new Error("transaction not found");
+    throw new ConfidentialTransfersError("INVALID_INPUT", `decryptTransferAmountAsAuditor: transaction ${input.signature} not found`, {
+      operation: "decryptTransferAmountAsAuditor",
+    });
   }
 
   const message = (result as unknown as FetchedTransactionMessage).transaction.message;
@@ -106,10 +109,16 @@ export async function decryptTransferAmountAsAuditor(
     const lo = ElGamalCiphertext.fromBytes(new Uint8Array(decoded.transferAmountAuditorCiphertextLo));
     const hi = ElGamalCiphertext.fromBytes(new Uint8Array(decoded.transferAmountAuditorCiphertextHi));
     if (!lo || !hi) {
-      throw new Error("failed to parse the auditor ciphertext");
+      throw new ConfidentialTransfersError("DECRYPTION_FAILED", "decryptTransferAmountAsAuditor: failed to parse the auditor ciphertext", {
+        operation: "decryptTransferAmountAsAuditor",
+      });
     }
     return secret.decrypt(lo) + (secret.decrypt(hi) << TRANSFER_AMOUNT_LO_BIT_LENGTH);
   }
 
-  throw new Error("no confidential-transfer instruction found in this transaction");
+  throw new ConfidentialTransfersError(
+    "INVALID_INPUT",
+    "decryptTransferAmountAsAuditor: no confidential-transfer instruction found in this transaction",
+    { operation: "decryptTransferAmountAsAuditor" },
+  );
 }

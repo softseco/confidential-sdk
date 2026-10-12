@@ -7,6 +7,7 @@
 import { isMessageSigner, isSome, type Address, type MessageSigner } from "@solana/kit";
 import type { Token } from "@solana-program/token-2022";
 
+import { ConfidentialTransfersError } from "../errors";
 import { deriveConfidentialKeys, getElGamalPubkeyAddress, type ConfidentialKeypairs } from "../keys";
 import { ensureZk } from "./zk";
 
@@ -18,11 +19,13 @@ export async function ownerKeys(
   await ensureZk();
   if (keys) return keys;
   if (!isMessageSigner(owner as { address: Address; [key: string]: unknown })) {
-    throw new Error(
+    throw new ConfidentialTransfersError(
+      "CANNOT_SIGN_MESSAGES",
       `${operation}: the owner ${owner.address} cannot sign messages, and no \`keys\` were passed. ` +
         "The confidential keys come from the owner's signature over a fixed message, so either use " +
         "a signer that can sign messages (a wallet with signMessage, or a keypair signer), or " +
         "derive the keys once with deriveConfidentialKeys({ signer }) and pass them as `keys`.",
+      { operation },
     );
   }
   return deriveConfidentialKeys({ signer: owner as MessageSigner });
@@ -44,10 +47,12 @@ export function assertKeysMatchAccount(
   if (!ct) return;
   const ours = getElGamalPubkeyAddress(keys.elgamalKeypair);
   if (ours !== ct.elgamalPubkey) {
-    throw new Error(
+    throw new ConfidentialTransfersError(
+      "KEYS_MISMATCH",
       `${operation}: these confidential keys (ElGamal public key ${ours}) are not the keys token ` +
         `account ${token} is configured with (${ct.elgamalPubkey}). Derive them from the account ` +
         "owner's wallet.",
+      { operation },
     );
   }
 }

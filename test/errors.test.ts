@@ -15,6 +15,7 @@ import { configureAccount } from "../src/configureAccount";
 import { decryptBalance } from "../src/decryptBalance";
 import { deposit } from "../src/deposit";
 import { transfer } from "../src/transfer";
+import { isConfidentialTransfersError, type ConfidentialTransfersErrorCode } from "../src/errors";
 import {
   createConfidentialMint,
   fundedSigner,
@@ -26,7 +27,11 @@ import {
 
 const describeOnChain = process.env.CT_LOCAL_PROGRAM === "1" ? describe : describe.skip;
 
-async function expectRejection(promise: Promise<unknown>, contains: string): Promise<void> {
+async function expectRejection(
+  promise: Promise<unknown>,
+  contains: string,
+  code?: ConfidentialTransfersErrorCode,
+): Promise<void> {
   let err: unknown;
   try {
     await promise;
@@ -35,6 +40,7 @@ async function expectRejection(promise: Promise<unknown>, contains: string): Pro
   }
   expect(err, "expected the call to reject").to.be.an("error");
   expect((err as Error).message).to.contain(contains);
+  if (code) expect(isConfidentialTransfersError(err, code), `expected code ${code}`).to.equal(true);
 }
 
 /** Create the owner's ATA without configuring it for confidential transfers. */
@@ -73,22 +79,43 @@ describeOnChain("error & guard paths (integration)", function () {
     const { mint } = await createConfidentialMint(payer);
     const owner = await createUnconfiguredAccount(payer, mint);
 
-    await expectRejection(decryptBalance({ rpc, owner, mint }), "ConfidentialTransferAccount");
+    await expectRejection(decryptBalance({ rpc, owner, mint }), "ConfidentialTransferAccount", "ACCOUNT_NOT_CONFIGURED");
     await expectRejection(
       applyPendingBalance({ rpc, rpcSubscriptions, payer, owner, mint }),
       "ConfidentialTransferAccount",
+      "ACCOUNT_NOT_CONFIGURED",
     );
   });
 
-  it("deposit surfaces program logs when the account is not configured", async () => {
+  it("deposit refuses an account that is not configured, before sending anything", async () => {
     const payer = await fundedSigner();
     const { mint, decimals } = await createConfidentialMint(payer);
     const owner = await createUnconfiguredAccount(payer, mint);
 
     await expectRejection(
       deposit({ rpc, rpcSubscriptions, payer, owner, mint, amount: 1n, decimals }),
-      "failed simulation",
+      "configureAccount first",
+      "ACCOUNT_NOT_CONFIGURED",
     );
+  });
+
+  it("deposit surfaces program logs when the chain refuses it", async () => {
+    const payer = await fundedSigner();
+    const owner = await fundedSigner();
+    const { mint, mintAuthority } = await createConfidentialMint(payer, 2);
+    const { token } = await configureAccount({ rpc, rpcSubscriptions, payer, owner, mint });
+    await mintPublicTokens({ payer, mint, token, mintAuthority, amount: 10n });
+
+    // Wrong decimals: only the program can tell, so the error comes from simulation, with logs.
+    let err: unknown;
+    try {
+      await deposit({ rpc, rpcSubscriptions, payer, owner, mint, amount: 1n, decimals: 9 });
+    } catch (e) {
+      err = e;
+    }
+    expect(isConfidentialTransfersError(err, "TRANSACTION_FAILED")).to.equal(true);
+    expect((err as Error).message).to.contain("failed simulation");
+    expect((err as { logs?: string[] }).logs?.join("\n")).to.contain("Program TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
   });
 
   it("transfer rejects an amount greater than the available balance", async () => {
@@ -114,6 +141,7 @@ describeOnChain("error & guard paths (integration)", function () {
         amount: 1000n,
       }),
       "Insufficient funds",
+      "INSUFFICIENT_FUNDS",
     );
   });
 
@@ -124,7 +152,8 @@ describeOnChain("error & guard paths (integration)", function () {
     await configureAccount({ rpc, rpcSubscriptions, payer, owner, mint });
     await expectRejection(
       configureAccount({ rpc, rpcSubscriptions, payer, owner, mint }),
-      "failed simulation",
+      "already configured",
+      "ACCOUNT_ALREADY_CONFIGURED",
     );
   });
 });

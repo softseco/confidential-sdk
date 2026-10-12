@@ -5,6 +5,8 @@
 // `ensureZk()` first, so applications do not have to.
 import initWasm from "@solana/zk-sdk/web";
 
+import { ConfidentialTransfersError } from "../errors";
+
 export * from "@solana/zk-sdk/web";
 
 export type InitConfidentialTransfersOptions = {
@@ -21,7 +23,8 @@ export function initConfidentialTransfers(options?: InitConfidentialTransfersOpt
     },
     (error: unknown) => {
       loading = undefined;
-      throw new Error(
+      throw new ConfidentialTransfersError(
+        "CRYPTO_UNAVAILABLE",
         "@softseco/confidential-transfers could not load the zk-sdk WebAssembly (index_bg.wasm from " +
           "@solana/zk-sdk/dist/web). With Vite's dev server, add " +
           '`optimizeDeps: { exclude: ["@solana/zk-sdk"] }` to vite.config, and if the request for the ' +
@@ -40,7 +43,8 @@ export function ensureZk(): Promise<void> {
 
 export function assertZkReady(what: string): void {
   if (!loaded) {
-    throw new Error(
+    throw new ConfidentialTransfersError(
+      "CRYPTO_UNAVAILABLE",
       `${what} needs the zk-sdk WebAssembly, which is not loaded yet. ` +
         "Call `await initConfidentialTransfers()` once before using it in a browser.",
     );

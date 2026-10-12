@@ -49,6 +49,9 @@ describe("public API", () => {
       "getElGamalPubkeyAddress",
       "pdaWalletPublicSeed",
       "initConfidentialTransfers",
+      "recoverProofAccounts",
+      "isConfidentialTransfersError",
+      "ConfidentialTransfersError",
     ];
     for (const name of names) {
       expect(sdk, `missing export: ${name}`)

@@ -13,12 +13,13 @@ transfers without hand-assembling the primitives.
 
 A Rust crate with the core helpers lives in [`rust/`](#rust).
 
-> **Status: `v3.1.0`.** Built on `@solana/kit` 8. The whole flow (configure, deposit, apply,
+> **Status: `v3.2.0`.** Built on `@solana/kit` 8. The whole flow (configure, deposit, apply,
 > transfer, withdraw) runs end-to-end on **devnet** and against a local validator, in Node and in
 > the browser. The SDK is self-audited, not independently audited. It runs on **Node ≥ 20.18**
-> and in web apps: bundlers pick the browser build by themselves, and keys come from the user's
-> wallet ([web apps guide](./guides/web-apps.md)). Confidential transfers depend on Solana's ZK
-> ElGamal Proof Program: check that it is enabled on your target cluster (it is on devnet).
+> and in web apps: bundlers pick the browser build by themselves, keys come from the user's
+> wallet, and a wallet is asked once per operation ([web apps guide](./guides/web-apps.md)).
+> Confidential transfers depend on Solana's ZK ElGamal Proof Program: it is enabled on devnet, and
+> `npm run example:mainnet` checks mainnet for you (see [On mainnet](#on-mainnet)).
 > Upgrading from 2.x means moving your app to `@solana/kit` 8; see [CHANGELOG.md](./CHANGELOG.md).
 >
 > **API reference:** [softseco.github.io/confidential-sdk/api](https://softseco.github.io/confidential-sdk/api/)
@@ -46,6 +47,19 @@ part of the balance back to public and decrypts the results. Every transaction i
 explorer link. The public devnet RPC rate-limits; set `DEVNET_RPC` and `DEVNET_WS` to your own
 endpoint if it gets slow.
 
+## On mainnet
+
+```bash
+MAINNET_RPC=https://your-mainnet-endpoint npm run example:mainnet            # checks only
+MAINNET_RPC=https://your-mainnet-endpoint npm run example:mainnet -- --send  # runs it
+```
+
+[`examples/mainnet.ts`](./examples/mainnet.ts) first checks, in a free simulation, that
+mainnet's ZK ElGamal Proof Program accepts the proofs this SDK makes, and what the run would cost.
+With `--send` it runs the whole flow with a test token and tiny amounts (1.00 in, 0.25 sent
+confidentially, 0.10 withdrawn), with a priority fee, paid from your Solana CLI wallet. It costs
+about 0.01 SOL, almost all of it rent that stays with the test mint and the two token accounts.
+
 ## Features
 
 - **`configureAccount`** enables a Token-2022 account for confidential transfers (with the PubkeyValidity ZK proof)
@@ -56,6 +70,7 @@ endpoint if it gets slow.
 - **`withdraw`** moves tokens from the confidential available balance back to the public balance (equality and range proofs)
 - **Transfer-hook mints**: `transfer` resolves the mint's transfer-hook accounts, so confidential transfers work on mints that enforce rules through a hook
 - **Auditor selective disclosure**: derive an auditor ElGamal identity and recover transfer amounts on an auditor-enabled mint, without the power to spend
+- **Built for real use**: a transfer's five transactions are signed together (a wallet asks once); if a step fails halfway, the proof accounts are closed and their rent returned; `recoverProofAccounts` cleans up after a process that stopped; priority fees, retries on expiry, and typed errors (`ConfidentialTransfersError` with a `code`) for every case the SDK checks
 
 Keys are derived deterministically from the account owner's wallet signer using the standard
 confidential-balances derivation: one signature over the constant message `solana-conf-bal/v1`,
@@ -195,10 +210,14 @@ const amount = await decryptTransferAmountAsAuditor({ rpc, signature, auditorKey
 | `deriveConfidentialKeysWithSeed` | Seed-scoped, non-standard derivation | `signer`, `publicSeed` → `{ elgamalKeypair, aesKey }` |
 | `pdaWalletPublicSeed` | Canonical seed for single-signer PDA wallets | `programId`, `walletPda`, `mint`, `tokenAccount` → `Uint8Array` |
 | `initConfidentialTransfers` | Start loading the WebAssembly early (browser; no-op in Node) | optional `wasmUrl` |
+| `recoverProofAccounts` | Close proof accounts a stopped transfer or withdraw left behind, and get the rent back | `rpc`, `rpcSubscriptions`, `authority` (the payer) → `{ closed, leftOpen, lamports }` |
+| `isConfidentialTransfersError` | Check an error's `code` (`INSUFFICIENT_FUNDS`, `PENDING_BALANCE_LIMIT`, `TRANSACTION_EXPIRED`, …) | `error`, optional `code` → `boolean` |
 
 Every function accepts an optional `programAddress` (defaults to Token-2022). Functions that need
 the owner's ElGamal/AES keys derive them from the `owner` signer, so no key storage is required,
-or take them as `keys` (from `deriveConfidentialKeys`) to skip the signature. Full reference:
+or take them as `keys` (from `deriveConfidentialKeys`) to skip the signature. Functions that send
+transactions also take `computeUnitPrice` (priority fee, micro-lamports per compute unit) and
+`retries` (run again when a transaction expires; default 0). Full reference:
 [softseco.github.io/confidential-sdk/api](https://softseco.github.io/confidential-sdk/api/).
 
 > **Upgrading from 2.x.** Move your app to `@solana/kit` 8. Function signatures and key
@@ -246,16 +265,16 @@ full workflow.
 
 ## Project status
 
-`v3.1.0`. The TypeScript package covers the full confidential-transfer lifecycle (configure,
+`v3.2.0`. The TypeScript package covers the full confidential-transfer lifecycle (configure,
 deposit, apply, transfer, withdraw, decrypt), transfer-hook mints and auditor selective
-disclosure, runs end-to-end on devnet, and works in web apps with browser wallets. Keys follow the ecosystem-standard
+disclosure, runs end-to-end on devnet, works in web apps with browser wallets, and handles
+failures halfway through a transfer. Keys follow the ecosystem-standard
 `solana-conf-bal/v1` derivation, pinned by the same test vector in TypeScript and Rust. Changes
 are tracked in [CHANGELOG.md](./CHANGELOG.md).
 
 Planned next:
 
-- 3.2: one wallet prompt for a whole transfer, picking up after a failed step, priority fees and
-  typed errors
+- A toolkit for auditors: read a mint's confidential transfers with the auditor key and export them
 - `withdraw` and transfer-hook accounts in the Rust crate
 - An independent audit
 

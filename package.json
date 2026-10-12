@@ -1,6 +1,6 @@
 {
   "name": "@softseco/confidential-transfers",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "description": "TypeScript SDK for Token-2022 confidential transfers on Solana: configure, deposit, apply, transfer, withdraw, decrypt.",
   "keywords": [
     "solana",
@@ -58,6 +58,7 @@
     "example": "tsx examples/confidential-transfer.ts",
     "example:devnet": "tsx examples/devnet.ts",
     "example:devnet-mint": "tsx examples/devnet-mint.ts",
+    "example:mainnet": "tsx examples/mainnet.ts",
     "validator": "bash scripts/start-test-validator.sh",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },

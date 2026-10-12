@@ -117,24 +117,53 @@ wallet.features`.
 
 ## What the user approves
 
-When the wallet pays the fees and owns the account, it is asked to approve every transaction:
+Since 3.2.0 the wallet is asked once per operation. A transfer is five transactions, but the SDK
+plans and signs them together, so the wallet shows one request for all five:
 
-| Step | Transactions |
-|---|---|
-| Unlock (`deriveConfidentialKeys`) | none, one message signature |
-| `configureAccount` | 1 |
-| `deposit` | 1 |
-| `applyPendingBalance` | 1 |
-| `transfer` | 5 (proof accounts, the transfer, closing the proof accounts) |
-| `withdraw` | 4 |
+| Step | Wallet prompts | Transactions |
+|---|---|---|
+| Unlock (`deriveConfidentialKeys`) | 1 (sign a message) | none |
+| `configureAccount` | 1 | 1 |
+| `deposit` | 1 | 1 |
+| `applyPendingBalance` | 1 | 1 |
+| `transfer` | 1 | 5 (proof accounts, then the transfer together with closing them) |
+| `withdraw` | 1 | 4 |
 
-A transfer with five prompts is the main rough edge in a browser today. Approving them in one
-prompt is planned for 3.2.
+The transactions are then sent one after another, each simulated first. If one fails before the
+transfer itself lands, the SDK closes the proof accounts it created (their rent goes back to the
+payer) and throws a `ConfidentialTransfersError`. Closing them is one more transaction, so the
+wallet asks once more in that case.
+
+## Errors
+
+Everything the SDK throws on purpose is a `ConfidentialTransfersError` with a `code`, so the app
+can say something useful instead of showing a stack trace:
+
+```ts
+import { isConfidentialTransfersError } from "@softseco/confidential-transfers";
+
+try {
+  await transfer({ rpc, rpcSubscriptions, payer: signer, owner: signer, mint, destinationOwner, amount, keys });
+} catch (e) {
+  if (isConfidentialTransfersError(e, "PENDING_BALANCE_LIMIT")) showMessage("The recipient has to accept their incoming payments first.");
+  else if (isConfidentialTransfersError(e, "INSUFFICIENT_FUNDS")) showMessage("Not enough confidential balance.");
+  else if (isConfidentialTransfersError(e) && e.retryable) showMessage("The network was busy. Try again.");
+  else throw e;
+}
+```
+
+The checks that can be made before anything is signed (the recipient's account exists, is
+configured and can take another payment; the amount fits; the balance covers it) are made first,
+so a doomed operation fails before the wallet opens.
+
+On a busy network, pass `computeUnitPrice` (a priority fee in micro-lamports per compute unit),
+and `retries` to run the operation again when a transaction expires. A retry signs new
+transactions, so the wallet asks again.
 
 ## Testing
 
 `test/browser/e2e.ts` runs `examples/vite` in Chromium with a Wallet Standard
 test wallet against a local validator: connect, unlock, set up, deposit, apply, transfer,
-withdraw, then checks the balances and that the wallet signed the key message exactly once. CI runs
-it on every push. To run it yourself, see
+withdraw, then checks the balances, that the wallet signed the key message exactly once, and that
+it was asked to approve transactions once per operation. CI runs it on every push. To run it yourself, see
 [CONTRIBUTING.md](https://github.com/softseco/confidential-sdk/blob/main/CONTRIBUTING.md).

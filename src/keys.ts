@@ -26,6 +26,8 @@ import {
   type ReadonlyUint8Array,
 } from "@solana/kit";
 import { ed25519 } from "@noble/curves/ed25519";
+
+import { ConfidentialTransfersError } from "./errors";
 import { AeKey, ConfidentialKeys, ElGamalKeypair, assertZkReady, ensureZk } from "./internal/zk";
 
 /** Public ElGamal key (as an Address) plus the 32-byte ElGamal secret key. */
@@ -50,14 +52,16 @@ async function signDerivationMessage(signer: MessageSigner, message: Uint8Array)
     // keys come from the signature over this exact message, so a changed message is an error.
     const [modified] = await signer.modifyAndSignMessages([signable]);
     if (!sameBytes(modified?.content, message)) {
-      throw new Error(
+      throw new ConfidentialTransfersError(
+        "BAD_MESSAGE_SIGNATURE",
         `Wallet ${signer.address} changed the message it was asked to sign, so the confidential ` +
           "keys would not match the standard derivation. Use a wallet that signs messages as given.",
       );
     }
     signed = modified.signatures;
   } else {
-    throw new Error(
+    throw new ConfidentialTransfersError(
+      "CANNOT_SIGN_MESSAGES",
       `Signer ${(signer as { address?: string }).address} cannot sign messages, and the ` +
         "confidential keys come from a message signature. With a browser wallet, use one that " +
         "supports signMessage (Wallet Standard `solana:signMessage`).",
@@ -65,12 +69,15 @@ async function signDerivationMessage(signer: MessageSigner, message: Uint8Array)
   }
   const signature = (signed as Record<string, Uint8Array | undefined> | undefined)?.[signer.address];
   if (signature == null) {
-    throw new Error(`Signer ${signer.address} did not return a signature`);
+    throw new ConfidentialTransfersError("BAD_MESSAGE_SIGNATURE", `Signer ${signer.address} did not return a signature`);
   }
   // Keys from a signature that does not verify would be keys nobody can derive again.
   const publicKey = new Uint8Array(getAddressEncoder().encode(signer.address));
   if (!ed25519.verify(new Uint8Array(signature), message, publicKey)) {
-    throw new Error(`Signer ${signer.address} returned a signature that does not verify against its address`);
+    throw new ConfidentialTransfersError(
+      "BAD_MESSAGE_SIGNATURE",
+      `Signer ${signer.address} returned a signature that does not verify against its address`,
+    );
   }
   return new Uint8Array(signature);
 }

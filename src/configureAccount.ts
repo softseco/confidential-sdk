@@ -10,16 +10,6 @@
 // (see ./keys), so they are recoverable and never stored. Pass `keys` to reuse
 // keys derived earlier instead of asking the wallet to sign again.
 import {
-  appendTransactionMessageInstructions,
-  assertIsTransactionWithBlockhashLifetime,
-  createTransactionMessage,
-  getBase64EncodedWireTransaction,
-  getSignatureFromTransaction,
-  pipe,
-  sendAndConfirmTransactionFactory,
-  setTransactionMessageFeePayerSigner,
-  setTransactionMessageLifetimeUsingBlockhash,
-  signTransactionMessageWithSigners,
   type Address,
   type Rpc,
   type RpcSubscriptions,
@@ -31,21 +21,25 @@ import {
 import {
   ExtensionType,
   TOKEN_2022_PROGRAM_ADDRESS,
+  fetchMaybeToken,
   findAssociatedTokenPda,
   getConfigureConfidentialTransferAccountInstruction,
   getCreateAssociatedTokenIdempotentInstruction,
   getReallocateInstruction,
 } from "@solana-program/token-2022";
 import { verifyPubkeyValidity } from "@solana-program/zk-elgamal-proof";
-import { PubkeyValidityProofData } from "./internal/zk";
 
-import type { ConfidentialKeypairs } from "./keys";
+import { ConfidentialTransfersError } from "./errors";
+import { confidentialState } from "./internal/accounts";
 import { ownerKeys } from "./internal/ownerKeys";
+import { sendInstructions, withRetries, type SendOptions } from "./internal/send";
+import { PubkeyValidityProofData } from "./internal/zk";
+import type { ConfidentialKeypairs } from "./keys";
 
 /** Default cap on un-applied incoming confidential credits (2^16). */
 const DEFAULT_MAXIMUM_PENDING_BALANCE_CREDIT_COUNTER = 1n << 16n;
 
-export type ConfigureAccountInput = {
+export type ConfigureAccountInput = SendOptions & {
   /** RPC client, e.g. `createSolanaRpc(url)`. */
   rpc: Rpc<SolanaRpcApi>;
   /** Used to confirm the transaction(s). */
@@ -91,100 +85,66 @@ export type ConfigureAccountResult = ConfidentialKeypairs & {
  * const { token } = await configureAccount({ rpc, rpcSubscriptions, payer, owner: alice, mint });
  * ```
  */
-export async function configureAccount(
-  input: ConfigureAccountInput,
-): Promise<ConfigureAccountResult> {
+export async function configureAccount(input: ConfigureAccountInput): Promise<ConfigureAccountResult> {
+  const operation = "configureAccount";
   const programAddress = input.programAddress ?? TOKEN_2022_PROGRAM_ADDRESS;
 
-  // 1. The account's encryption keys: given, or derived deterministically from the owner.
-  const { elgamalKeypair, aesKey } = await ownerKeys(input.owner, input.keys, "configureAccount");
-
-  // 2. Resolve the owner's associated token account.
   const [token] = await findAssociatedTokenPda({
     owner: input.owner.address,
     tokenProgram: programAddress,
     mint: input.mint,
   });
-
-  // 3. Generate the pubkey-validity proof and its on-chain verify instruction.
-  const proofData = new PubkeyValidityProofData(elgamalKeypair);
-  const [verifyProofInstruction] = await verifyPubkeyValidity({
-    rpc: input.rpc,
-    payer: input.payer,
-    proofData: new Uint8Array(proofData.toBytes()),
-  });
-
-  // 4. One transaction. configure's proofInstructionOffset = 1 points to the
-  //    verify instruction that follows it.
-  const instructions = [
-    getCreateAssociatedTokenIdempotentInstruction({
-      ata: token,
-      mint: input.mint,
-      owner: input.owner.address,
-      payer: input.payer,
-      tokenProgram: programAddress,
-    }),
-    getReallocateInstruction(
-      {
-        token,
-        payer: input.payer,
-        owner: input.owner,
-        newExtensionTypes: [ExtensionType.ConfidentialTransferAccount],
-      },
-      { programAddress },
-    ),
-    getConfigureConfidentialTransferAccountInstruction(
-      {
-        token,
-        mint: input.mint,
-        authority: input.owner,
-        decryptableZeroBalance: aesKey.encrypt(0n).toBytes(),
-        maximumPendingBalanceCreditCounter:
-          input.maximumPendingBalanceCreditCounter ??
-          DEFAULT_MAXIMUM_PENDING_BALANCE_CREDIT_COUNTER,
-        proofInstructionOffset: 1,
-      },
-      { programAddress },
-    ),
-    verifyProofInstruction,
-  ];
-
-  // 5. Build, sign, simulate (to surface program logs on failure), send, confirm.
-  const { value: latestBlockhash } = await input.rpc.getLatestBlockhash().send();
-  const transactionMessage = pipe(
-    createTransactionMessage({ version: 0 }),
-    (tx) => setTransactionMessageFeePayerSigner(input.payer, tx),
-    (tx) => setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, tx),
-    (tx) => appendTransactionMessageInstructions(instructions, tx),
-  );
-  const signedTransaction = await signTransactionMessageWithSigners(transactionMessage);
-
-  const simulation = await input.rpc
-    .simulateTransaction(getBase64EncodedWireTransaction(signedTransaction), {
-      encoding: "base64",
-      replaceRecentBlockhash: true,
-      sigVerify: false,
-    })
-    .send();
-  if (simulation.value.err) {
-    throw new Error(
-      "configureAccount transaction failed simulation: " +
-        JSON.stringify(simulation.value.err, (_k, v) => (typeof v === "bigint" ? v.toString() : v)) +
-        "\n--- program logs ---\n" +
-        (simulation.value.logs ?? []).join("\n"),
+  const existing = await fetchMaybeToken(input.rpc, token);
+  if (existing.exists && confidentialState(existing.data)) {
+    throw new ConfidentialTransfersError(
+      "ACCOUNT_ALREADY_CONFIGURED",
+      `${operation}: token account ${token} is already configured for confidential transfers.`,
+      { operation },
     );
   }
 
-  assertIsTransactionWithBlockhashLifetime(signedTransaction);
-  await sendAndConfirmTransactionFactory({
-    rpc: input.rpc,
-    rpcSubscriptions: input.rpcSubscriptions,
-  })(signedTransaction, { commitment: "confirmed", skipPreflight: true });
+  // The account's encryption keys: given, or derived deterministically from the owner.
+  const { elgamalKeypair, aesKey } = await ownerKeys(input.owner, input.keys, operation);
 
-  return {
-    token,
-    elgamalKeypair,
-    aesKey,
-    signature: getSignatureFromTransaction(signedTransaction),
-  };
+  const signature = await withRetries(input.retries, async () => {
+    // The pubkey-validity proof and its on-chain verify instruction; configure's
+    // proofInstructionOffset = 1 points to the verify instruction that follows it.
+    const proofData = new PubkeyValidityProofData(elgamalKeypair);
+    const [verifyProofInstruction] = await verifyPubkeyValidity({
+      rpc: input.rpc,
+      payer: input.payer,
+      proofData: new Uint8Array(proofData.toBytes()),
+    });
+    return sendInstructions(
+      { rpc: input.rpc, rpcSubscriptions: input.rpcSubscriptions, payer: input.payer, operation, computeUnitPrice: input.computeUnitPrice },
+      [
+        getCreateAssociatedTokenIdempotentInstruction({
+          ata: token,
+          mint: input.mint,
+          owner: input.owner.address,
+          payer: input.payer,
+          tokenProgram: programAddress,
+        }),
+        getReallocateInstruction(
+          { token, payer: input.payer, owner: input.owner, newExtensionTypes: [ExtensionType.ConfidentialTransferAccount] },
+          { programAddress },
+        ),
+        getConfigureConfidentialTransferAccountInstruction(
+          {
+            token,
+            mint: input.mint,
+            authority: input.owner,
+            decryptableZeroBalance: aesKey.encrypt(0n).toBytes(),
+            maximumPendingBalanceCreditCounter:
+              input.maximumPendingBalanceCreditCounter ?? DEFAULT_MAXIMUM_PENDING_BALANCE_CREDIT_COUNTER,
+            proofInstructionOffset: 1,
+          },
+          { programAddress },
+        ),
+        verifyProofInstruction,
+      ],
+    );
+  });
+
+  return { token, elgamalKeypair, aesKey, signature };
 }

@@ -9,7 +9,7 @@
   "readme": "none",
   "excludePrivate": true,
   "excludeInternal": true,
-  "gitRevision": "v3.1.0",
+  "gitRevision": "v3.2.0",
   "sourceLinkTemplate": "https://github.com/softseco/confidential-sdk/blob/{gitRevision}/{path}#L{line}",
   "navigationLinks": {
     "GitHub": "https://github.com/softseco/confidential-sdk",

@@ -120,7 +120,7 @@ $("deposit").onclick = () =>
   });
 
 $("transfer").onclick = () =>
-  run("Sending: approve each transaction in your wallet", async () => {
+  run("Sending: approve the transactions in your wallet", async () => {
     const to = input("to");
     if (!isAddress(to)) throw new Error("Enter the recipient's wallet address.");
     const { mint, decimals } = await currentMint();
@@ -139,7 +139,7 @@ $("transfer").onclick = () =>
   });
 
 $("withdraw").onclick = () =>
-  run("Withdrawing: approve each transaction in your wallet", async () => {
+  run("Withdrawing: approve the transactions in your wallet", async () => {
     const { mint, decimals } = await currentMint();
     const amount = toBaseUnits(input("withdraw-amount"), decimals);
     const { signatures } = await withdraw({ rpc, rpcSubscriptions, payer: requireSigner(), owner: requireSigner(), mint, amount, decimals, keys: requireKeys() });

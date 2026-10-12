@@ -22,6 +22,11 @@
  * @document ../guides/web-apps.md
  */
 export { initConfidentialTransfers } from "./internal/zk";
+export { ConfidentialTransfersError, isConfidentialTransfersError } from "./errors";
+export type { ConfidentialTransfersErrorCode, ConfidentialTransfersErrorDetails } from "./errors";
+export type { SendOptions } from "./internal/send";
+export { recoverProofAccounts } from "./recoverProofAccounts";
+export type { RecoverProofAccountsInput, RecoverProofAccountsResult } from "./recoverProofAccounts";
 export type { InitConfidentialTransfersOptions } from "./internal/zk";
 export { configureAccount } from "./configureAccount";
 export type { ConfigureAccountInput, ConfigureAccountResult } from "./configureAccount";

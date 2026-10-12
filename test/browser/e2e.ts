@@ -92,9 +92,15 @@ async function main(): Promise<void> {
     await expectText(page, "#public-balance", "2.00");
 
     const stats = (await page.evaluate(() => window.__testWallet)) as WalletStats;
-    console.log(`wallet: ${stats.signMessage} message signature(s), ${stats.transactions} transaction(s)`);
+    console.log(
+      `wallet: ${stats.signMessage} message signature(s), ${stats.signTransaction} approval(s) for ${stats.transactions} transaction(s)`,
+    );
     if (stats.signMessage !== 1) {
       throw new Error(`the wallet was asked to sign the key message ${stats.signMessage} times; expected once`);
+    }
+    // One approval per operation: set up, deposit, apply, transfer (5 transactions), withdraw (4).
+    if (stats.signTransaction !== 5) {
+      throw new Error(`the wallet was asked to approve transactions ${stats.signTransaction} times; expected 5, one per operation`);
     }
     await page.close();
 

@@ -4,22 +4,19 @@
 // AES key derived from the owner's wallet signer (or the `keys` passed in).
 // Read-only — no transaction.
 import {
-  isSome,
   type Address,
   type MessageSigner,
   type Rpc,
   type SolanaRpcApi,
   type TransactionSigner,
 } from "@solana/kit";
-import {
-  TOKEN_2022_PROGRAM_ADDRESS,
-  fetchToken,
-  findAssociatedTokenPda,
-} from "@solana-program/token-2022";
-import { AeCiphertext } from "./internal/zk";
+import { TOKEN_2022_PROGRAM_ADDRESS, findAssociatedTokenPda } from "@solana-program/token-2022";
 
-import type { ConfidentialKeypairs } from "./keys";
+import { ConfidentialTransfersError } from "./errors";
+import { readConfiguredAccount } from "./internal/accounts";
 import { assertKeysMatchAccount, ownerKeys } from "./internal/ownerKeys";
+import { AeCiphertext } from "./internal/zk";
+import type { ConfidentialKeypairs } from "./keys";
 
 export type DecryptBalanceInput = {
   /** RPC client, e.g. `createSolanaRpc(url)`. */
@@ -54,22 +51,19 @@ export async function decryptBalance(input: DecryptBalanceInput): Promise<bigint
       })
     )[0];
 
-  const { data } = await fetchToken(input.rpc, token);
-  if (!isSome(data.extensions)) {
-    throw new Error("token account is not configured for confidential transfers");
-  }
-  const ct = data.extensions.value.find((e) => e.__kind === "ConfidentialTransferAccount");
-  if (!ct) {
-    throw new Error("token account is missing the ConfidentialTransferAccount extension");
-  }
+  const operation = "decryptBalance";
+  const { data, ct } = await readConfiguredAccount(input.rpc, token, operation);
 
-  const keys = await ownerKeys(input.owner, input.keys, "decryptBalance");
-  assertKeysMatchAccount(keys, data, token, "decryptBalance");
-  const { aesKey } = keys;
+  const keys = await ownerKeys(input.owner, input.keys, operation);
+  assertKeysMatchAccount(keys, data, token, operation);
 
   const ciphertext = AeCiphertext.fromBytes(new Uint8Array(ct.decryptableAvailableBalance as Uint8Array));
   if (!ciphertext) {
-    throw new Error("failed to parse the decryptable available balance");
+    throw new ConfidentialTransfersError("DECRYPTION_FAILED", `${operation}: failed to parse the decryptable available balance`, { operation });
   }
-  return aesKey.decrypt(ciphertext);
+  try {
+    return keys.aesKey.decrypt(ciphertext);
+  } catch (e) {
+    throw new ConfidentialTransfersError("DECRYPTION_FAILED", `${operation}: could not decrypt the available balance of ${token}: ${String(e)}`, { operation, cause: e });
+  }
 }

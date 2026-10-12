@@ -16,6 +16,7 @@ import type { IdentifierArray, Wallet, WalletAccount } from "@wallet-standard/ba
 import type { StandardConnectFeature, StandardEventsFeature, StandardEventsListeners } from "@wallet-standard/features";
 import { registerWallet } from "@wallet-standard/wallet";
 
+/** signTransaction counts requests (what a user approves); transactions counts what was in them. */
 type Stats = { signMessage: number; signTransaction: number; transactions: number };
 declare global {
   interface Window {

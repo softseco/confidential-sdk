@@ -6,16 +6,6 @@
 // pending balance. The account must already be configured for confidential
 // transfers (see configureAccount) and hold a public token balance.
 import {
-  appendTransactionMessageInstructions,
-  assertIsTransactionWithBlockhashLifetime,
-  createTransactionMessage,
-  getBase64EncodedWireTransaction,
-  getSignatureFromTransaction,
-  pipe,
-  sendAndConfirmTransactionFactory,
-  setTransactionMessageFeePayerSigner,
-  setTransactionMessageLifetimeUsingBlockhash,
-  signTransactionMessageWithSigners,
   type Address,
   type Rpc,
   type RpcSubscriptions,
@@ -30,7 +20,11 @@ import {
   getConfidentialDepositInstruction,
 } from "@solana-program/token-2022";
 
-export type DepositInput = {
+import { ConfidentialTransfersError } from "./errors";
+import { MAX_DEPOSIT_OR_TRANSFER_AMOUNT, assertCanReceive, readConfiguredAccount } from "./internal/accounts";
+import { sendInstructions, withRetries, type SendOptions } from "./internal/send";
+
+export type DepositInput = SendOptions & {
   /** RPC client, e.g. `createSolanaRpc(url)`. */
   rpc: Rpc<SolanaRpcApi>;
   /** Used to confirm the transaction(s). */
@@ -41,7 +35,7 @@ export type DepositInput = {
   owner: TransactionSigner;
   /** Mint configured for confidential transfers. */
   mint: Address;
-  /** Amount of public tokens to move into the confidential pending balance. */
+  /** Amount of public tokens to move into the confidential pending balance (at most 2^48 - 1). */
   amount: number | bigint;
   /** Mint decimals (must match the mint). */
   decimals: number;
@@ -62,58 +56,43 @@ export type DepositResult = {
  * afterwards to make it spendable.
  */
 export async function deposit(input: DepositInput): Promise<DepositResult> {
+  const operation = "deposit";
   const programAddress = input.programAddress ?? TOKEN_2022_PROGRAM_ADDRESS;
-  const token =
-    input.token ??
-    (
-      await findAssociatedTokenPda({
-        owner: input.owner.address,
-        tokenProgram: programAddress,
-        mint: input.mint,
-      })
-    )[0];
-
-  const instruction = getConfidentialDepositInstruction(
-    {
-      token,
-      mint: input.mint,
-      authority: input.owner,
-      amount: input.amount,
-      decimals: input.decimals,
-    },
-    { programAddress },
-  );
-
-  const { value: latestBlockhash } = await input.rpc.getLatestBlockhash().send();
-  const transactionMessage = pipe(
-    createTransactionMessage({ version: 0 }),
-    (tx) => setTransactionMessageFeePayerSigner(input.payer, tx),
-    (tx) => setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, tx),
-    (tx) => appendTransactionMessageInstructions([instruction], tx),
-  );
-  const signedTransaction = await signTransactionMessageWithSigners(transactionMessage);
-
-  const simulation = await input.rpc
-    .simulateTransaction(getBase64EncodedWireTransaction(signedTransaction), {
-      encoding: "base64",
-      replaceRecentBlockhash: true,
-      sigVerify: false,
-    })
-    .send();
-  if (simulation.value.err) {
-    throw new Error(
-      "deposit transaction failed simulation: " +
-        JSON.stringify(simulation.value.err, (_k, v) => (typeof v === "bigint" ? v.toString() : v)) +
-        "\n--- program logs ---\n" +
-        (simulation.value.logs ?? []).join("\n"),
+  const amount = BigInt(input.amount);
+  if (amount <= 0n) {
+    throw new ConfidentialTransfersError("INVALID_INPUT", `${operation}: the amount must be greater than zero, got ${amount}.`, { operation });
+  }
+  if (amount > MAX_DEPOSIT_OR_TRANSFER_AMOUNT) {
+    throw new ConfidentialTransfersError(
+      "AMOUNT_TOO_LARGE",
+      `${operation}: ${amount} is more than one deposit can carry (${MAX_DEPOSIT_OR_TRANSFER_AMOUNT}, 2^48 - 1). Split it.`,
+      { operation },
     );
   }
+  const token =
+    input.token ??
+    (await findAssociatedTokenPda({ owner: input.owner.address, tokenProgram: programAddress, mint: input.mint }))[0];
 
-  assertIsTransactionWithBlockhashLifetime(signedTransaction);
-  await sendAndConfirmTransactionFactory({
-    rpc: input.rpc,
-    rpcSubscriptions: input.rpcSubscriptions,
-  })(signedTransaction, { commitment: "confirmed", skipPreflight: true });
+  const signature = await withRetries(input.retries, async () => {
+    const { data, ct } = await readConfiguredAccount(input.rpc, token, operation, "your");
+    if (data.amount < amount) {
+      throw new ConfidentialTransfersError(
+        "INSUFFICIENT_FUNDS",
+        `${operation}: the public balance of ${token} is ${data.amount}, less than ${amount}.`,
+        { operation },
+      );
+    }
+    assertCanReceive(ct, token, operation, "your");
+    return sendInstructions(
+      { rpc: input.rpc, rpcSubscriptions: input.rpcSubscriptions, payer: input.payer, operation, computeUnitPrice: input.computeUnitPrice },
+      [
+        getConfidentialDepositInstruction(
+          { token, mint: input.mint, authority: input.owner, amount, decimals: input.decimals },
+          { programAddress },
+        ),
+      ],
+    );
+  });
 
-  return { token, signature: getSignatureFromTransaction(signedTransaction) };
+  return { token, signature };
 }
